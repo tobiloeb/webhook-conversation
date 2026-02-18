@@ -16,6 +16,8 @@ from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+import websockets
+import json
 
 from .const import (
     CONF_OUTPUT_FIELD,
@@ -125,82 +127,111 @@ class WebhookConversationSTTEntity(
     ) -> stt.SpeechResult:
         """Process an audio stream to STT service."""
         audio_data = b""
-        async for chunk in stream:
-            audio_data += chunk
-
-        # Convert to proper WAV format if needed
-        if metadata.format == stt.AudioFormats.WAV:
-            # Convert raw audio data to proper WAV format with headers
-            wav_data = _convert_to_wav(
-                audio_data,
-                metadata.sample_rate.value,
-                metadata.bit_rate.value,
-                metadata.channel.value,
-            )
-            audio_base64 = base64.b64encode(wav_data).decode("utf-8")
-        else:
-            # For other formats, use as-is (assuming they're already properly formatted)
-            audio_base64 = base64.b64encode(audio_data).decode("utf-8")
-
-        # Create audio binary object
-        audio_object: WebhookConversationBinaryObject = {
-            "name": f"audio.{metadata.format.value}",
-            "path": Path(f"audio.{metadata.format.value}"),
-            "mime_type": f"audio/{metadata.format.value}",
-            "data": audio_base64,
-        }
-
-        # Prepare the payload
-        payload: WebhookSTTRequestPayload = {
-            "audio": audio_object,
-            "language": metadata.language,
-        }
 
         timeout = self._subentry.data.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)
-        session = async_get_clientsession(self.hass)
-        client_timeout = aiohttp.ClientTimeout(total=timeout)
-        headers = self._get_auth_headers()
 
-        try:
-            async with session.post(
-                self._webhook_url,
-                json=payload,
-                headers=headers,
-                timeout=client_timeout,
-            ) as response:
-                if response.status != 200:
+        if self._webhook_url.startswith("ws://"):
+            _LOGGER.warning("STT Streaming in progress")
+            async with websockets.connect(
+                self._webhook_url, close_timeout=timeout
+            ) as ws:
+                async for chunk in stream:  # AsyncIterable[bytes] -> WS binary
+                    await ws.send(chunk)  # Automatisch als binary flagged
+
+                await ws.send(json.dumps({"type": "eof"}).encode())
+                _LOGGER.warning("📤 EOF gesendet")
+
+                # 3. n8n Response warten (JSON mit output)
+                response_msg = await ws.recv()
+                response_json = json.loads(response_msg)
+
+                text = response_json.get("output")
+                _LOGGER.warning(text)
+                if text and isinstance(text, str):
+                    return stt.SpeechResult(
+                        text.strip(),
+                        stt.SpeechResultState.SUCCESS,
+                    )
+                if text == "":
+                    return stt.SpeechResult(None, stt.SpeechResultState.SUCCESS)
+
+                return stt.SpeechResult(None, stt.SpeechResultState.ERROR)
+        else:
+            async for chunk in stream:
+                audio_data += chunk
+
+            # Convert to proper WAV format if needed
+            if metadata.format == stt.AudioFormats.WAV:
+                # Convert raw audio data to proper WAV format with headers
+                wav_data = _convert_to_wav(
+                    audio_data,
+                    metadata.sample_rate.value,
+                    metadata.bit_rate.value,
+                    metadata.channel.value,
+                )
+                audio_base64 = base64.b64encode(wav_data).decode("utf-8")
+            else:
+                # For other formats, use as-is (assuming they're already properly formatted)
+                audio_base64 = base64.b64encode(audio_data).decode("utf-8")
+
+            # Create audio binary object
+            audio_object: WebhookConversationBinaryObject = {
+                "name": f"audio.{metadata.format.value}",
+                "path": Path(f"audio.{metadata.format.value}"),
+                "mime_type": f"audio/{metadata.format.value}",
+                "data": audio_base64,
+            }
+
+            # Prepare the payload
+            payload: WebhookSTTRequestPayload = {
+                "audio": audio_object,
+                "language": metadata.language,
+            }
+
+            session = async_get_clientsession(self.hass)
+            client_timeout = aiohttp.ClientTimeout(total=timeout)
+            headers = self._get_auth_headers()
+
+            try:
+                async with session.post(
+                    self._webhook_url,
+                    json=payload,
+                    headers=headers,
+                    timeout=client_timeout,
+                ) as response:
+                    if response.status != 200:
+                        _LOGGER.error(
+                            "Error contacting STT webhook: HTTP %s - %s",
+                            response.status,
+                            response.reason,
+                        )
+                        return stt.SpeechResult(None, stt.SpeechResultState.ERROR)
+
+                    response_data = await response.json()
+                    output_field = self._subentry.data.get(
+                        CONF_OUTPUT_FIELD, DEFAULT_OUTPUT_FIELD
+                    )
+
+                    if output_field in response_data:
+                        text = response_data[output_field]
+                        if text and isinstance(text, str):
+                            return stt.SpeechResult(
+                                text.strip(),
+                                stt.SpeechResultState.SUCCESS,
+                            )
+                        if text == "":
+                            return stt.SpeechResult(None, stt.SpeechResultState.SUCCESS)
+
                     _LOGGER.error(
-                        "Error contacting STT webhook: HTTP %s - %s",
-                        response.status,
-                        response.reason,
+                        "STT webhook response missing or invalid output field '%s': %s",
+                        output_field,
+                        response_data,
                     )
                     return stt.SpeechResult(None, stt.SpeechResultState.ERROR)
 
-                response_data = await response.json()
-                output_field = self._subentry.data.get(
-                    CONF_OUTPUT_FIELD, DEFAULT_OUTPUT_FIELD
-                )
-
-                if output_field in response_data:
-                    text = response_data[output_field]
-                    if text and isinstance(text, str):
-                        return stt.SpeechResult(
-                            text.strip(),
-                            stt.SpeechResultState.SUCCESS,
-                        )
-                    if text == "":
-                        return stt.SpeechResult(None, stt.SpeechResultState.SUCCESS)
-
-                _LOGGER.error(
-                    "STT webhook response missing or invalid output field '%s': %s",
-                    output_field,
-                    response_data,
-                )
+            except aiohttp.ClientError as err:
+                _LOGGER.error("Error during STT request: %s", err)
                 return stt.SpeechResult(None, stt.SpeechResultState.ERROR)
-
-        except aiohttp.ClientError as err:
-            _LOGGER.error("Error during STT request: %s", err)
-            return stt.SpeechResult(None, stt.SpeechResultState.ERROR)
-        except (ValueError, KeyError) as err:
-            _LOGGER.error("Error parsing STT response: %s", err)
-            return stt.SpeechResult(None, stt.SpeechResultState.ERROR)
+            except (ValueError, KeyError) as err:
+                _LOGGER.error("Error parsing STT response: %s", err)
+                return stt.SpeechResult(None, stt.SpeechResultState.ERROR)
