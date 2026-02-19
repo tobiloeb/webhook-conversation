@@ -126,6 +126,26 @@ class WebhookConversationSTTEntity(
         """Return a list of supported channels."""
         return [stt.AudioChannels.CHANNEL_MONO]
 
+    def handle_response_data(self, response_json: str):
+        output_field = self._subentry.data.get(CONF_OUTPUT_FIELD, DEFAULT_OUTPUT_FIELD)
+
+        if output_field in response_json:
+            text = response_json[output_field]
+            if text and isinstance(text, str):
+                return stt.SpeechResult(
+                    text.strip(),
+                    stt.SpeechResultState.SUCCESS,
+                )
+            if text == "":
+                return stt.SpeechResult(None, stt.SpeechResultState.SUCCESS)
+
+        _LOGGER.error(
+            "STT webhook response missing or invalid output field '%s': %s",
+            output_field,
+            response_json,
+        )
+        return stt.SpeechResult(None, stt.SpeechResultState.ERROR)
+
     async def async_process_audio_stream(
         self, metadata: stt.SpeechMetadata, stream: AsyncIterable[bytes]
     ) -> stt.SpeechResult:
@@ -160,18 +180,7 @@ class WebhookConversationSTTEntity(
                 await ws.send(json.dumps({"type": "eof"}).encode(), text=True)
 
                 response_msg = await ws.recv()
-                response_json = json.loads(response_msg)
-                text = response_json.get("output")
-
-                if text and isinstance(text, str):
-                    return stt.SpeechResult(
-                        text.strip(),
-                        stt.SpeechResultState.SUCCESS,
-                    )
-                if text == "":
-                    return stt.SpeechResult(None, stt.SpeechResultState.SUCCESS)
-
-                return stt.SpeechResult(None, stt.SpeechResultState.ERROR)
+                return self.handle_response_data(json.loads(response_msg))
         else:
             async for chunk in stream:
                 audio_data += chunk
@@ -224,26 +233,7 @@ class WebhookConversationSTTEntity(
                         return stt.SpeechResult(None, stt.SpeechResultState.ERROR)
 
                     response_data = await response.json()
-                    output_field = self._subentry.data.get(
-                        CONF_OUTPUT_FIELD, DEFAULT_OUTPUT_FIELD
-                    )
-
-                    if output_field in response_data:
-                        text = response_data[output_field]
-                        if text and isinstance(text, str):
-                            return stt.SpeechResult(
-                                text.strip(),
-                                stt.SpeechResultState.SUCCESS,
-                            )
-                        if text == "":
-                            return stt.SpeechResult(None, stt.SpeechResultState.SUCCESS)
-
-                    _LOGGER.error(
-                        "STT webhook response missing or invalid output field '%s': %s",
-                        output_field,
-                        response_data,
-                    )
-                    return stt.SpeechResult(None, stt.SpeechResultState.ERROR)
+                    return self.handle_response_data(response_data)
 
             except aiohttp.ClientError as err:
                 _LOGGER.error("Error during STT request: %s", err)

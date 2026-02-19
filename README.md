@@ -209,6 +209,21 @@ This example workflow includes:
 }
 ```
 
+##### For **STT (Speech-to-Text) via WebSocket**
+
+First text message in WebSocket:
+```json
+{
+  "basic_auth": "base64EncodedString",
+  "name": "audio.wav",
+  "mime_type": "audio/wav",
+  "language": "en-US",
+  "sample_rate": 16000,
+  "bit_rate": 16,
+  "channels": 1
+}
+```
+
 > [!NOTE]
 > For **conversations**: The `device_id` and `device_info` fields are only set when the conversation was initiated via a voice satellite. The `language` field contains the language code (e.g., "de-DE") configured for the conversation. The `agent_id` field contains the entity ID of the conversation agent.
 >
@@ -216,7 +231,9 @@ This example workflow includes:
 >
 > For **TTS**: The `voice` field is only included when a specific voice is requested and the TTS service has been configured with available voices. The webhook should return audio data with an appropriate Content-Type header (e.g., "audio/wav" or "audio/mp3").
 >
-> For **STT**: The audio data is automatically converted to the appropriate format and encoded as base64. The webhook should return a JSON response with the transcribed text in the configured output field (default: "output").
+> For **STT** via http/https: The audio data is automatically converted to the appropriate format and encoded as base64. The webhook should return a JSON response with the transcribed text in the configured output field (default: "output").
+>
+> For **STT** via ws: The audio data is streamed directly as byte stream. The websocket should return a JSON response with the transcribed text in the configured output field (default: "output").
 
 ## Authentication
 
