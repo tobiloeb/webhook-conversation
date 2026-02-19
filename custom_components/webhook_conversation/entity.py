@@ -59,10 +59,7 @@ class WebhookConversationBaseEntity(Entity):
             entry_type=dr.DeviceEntryType.SERVICE,
         )
 
-    def _get_auth_headers(self) -> dict[str, str]:
-        """Get authentication headers based on configured auth type."""
-        headers = {"Content-Type": "application/json"}
-
+    def _get_basic_auth(self) -> str | None:
         if self._auth_type == AuthType.BASIC:
             username = self._subentry.data.get(CONF_USERNAME, "")
             password = self._subentry.data.get(CONF_PASSWORD, "")
@@ -71,11 +68,20 @@ class WebhookConversationBaseEntity(Entity):
                 credentials = base64.b64encode(
                     f"{username}:{password}".encode()
                 ).decode()
-                headers["Authorization"] = f"Basic {credentials}"
+                return credentials
             else:
                 _LOGGER.warning(
                     "Basic authentication configured but credentials missing"
                 )
+                return None
+
+    def _get_auth_headers(self) -> dict[str, str]:
+        """Get authentication headers based on configured auth type."""
+        headers = {"Content-Type": "application/json"}
+
+        basic_auth = self._get_basic_auth()
+        if basic_auth is not None:
+            headers["Authorization"] = f"Basic {basic_auth}"
 
         return headers
 

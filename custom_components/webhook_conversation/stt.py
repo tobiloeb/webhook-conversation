@@ -27,7 +27,11 @@ from .const import (
     DEFAULT_TIMEOUT,
 )
 from .entity import WebhookConversationBaseEntity
-from .models import WebhookConversationBinaryObject, WebhookSTTRequestPayload
+from .models import (
+    WebhookConversationBinaryObject,
+    WebhookConversationSTTWebSocketMetadata,
+    WebhookSTTRequestPayload,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -131,22 +135,34 @@ class WebhookConversationSTTEntity(
         timeout = self._subentry.data.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)
 
         if self._webhook_url.startswith("ws://"):
-            _LOGGER.warning("STT Streaming in progress")
             async with websockets.connect(
                 self._webhook_url, close_timeout=timeout
             ) as ws:
-                async for chunk in stream:  # AsyncIterable[bytes] -> WS binary
-                    await ws.send(chunk)  # Automatisch als binary flagged
+                metadata_stt_ws: WebhookConversationSTTWebSocketMetadata = {
+                    "name": f"audio.{metadata.format.value}",
+                    "mime_type": f"audio/{metadata.format.value}",
+                    "language": metadata.language,
+                    "sample_rate": metadata.sample_rate.value,
+                    "bit_rate": metadata.bit_rate.value,
+                    "channels": metadata.channel.value,
+                }
 
-                await ws.send(json.dumps({"type": "eof"}).encode())
-                _LOGGER.warning("📤 EOF gesendet")
+                basic_auth = self._get_basic_auth()
+                if basic_auth is not None:
+                    metadata_stt_ws["basic_auth"] = basic_auth
 
-                # 3. n8n Response warten (JSON mit output)
+                # First ws message contains metadata about the audio stream and settings
+                await ws.send(json.dumps(metadata_stt_ws).encode(), text=True)
+
+                async for chunk in stream:
+                    await ws.send(chunk, text=False)
+
+                await ws.send(json.dumps({"type": "eof"}).encode(), text=True)
+
                 response_msg = await ws.recv()
                 response_json = json.loads(response_msg)
-
                 text = response_json.get("output")
-                _LOGGER.warning(text)
+
                 if text and isinstance(text, str):
                     return stt.SpeechResult(
                         text.strip(),
