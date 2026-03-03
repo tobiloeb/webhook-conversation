@@ -16,7 +16,6 @@ from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-import websockets
 import json
 
 from .const import (
@@ -126,7 +125,7 @@ class WebhookConversationSTTEntity(
         """Return a list of supported channels."""
         return [stt.AudioChannels.CHANNEL_MONO]
 
-    def handle_response_data(self, response_json: str):
+    def handle_response_data(self, response_json: json) -> stt.SpeechResult:
         output_field = self._subentry.data.get(CONF_OUTPUT_FIELD, DEFAULT_OUTPUT_FIELD)
 
         if output_field in response_json:
@@ -157,9 +156,9 @@ class WebhookConversationSTTEntity(
         if self._webhook_url.startswith("ws://") or self._webhook_url.startswith(
             "wss://"
         ):
-            async with websockets.connect(
-                self._webhook_url, close_timeout=timeout
-            ) as ws:
+            session = async_get_clientsession(self.hass)
+
+            async with session.ws_connect(self._webhook_url, timeout=timeout) as ws:
                 metadata_stt_ws: WebhookConversationSTTWebSocketMetadata = {
                     "name": f"audio.{metadata.format.value}",
                     "mime_type": f"audio/{metadata.format.value}",
@@ -174,14 +173,14 @@ class WebhookConversationSTTEntity(
                     metadata_stt_ws["basic_auth"] = basic_auth
 
                 # First ws message contains metadata about the audio stream and settings
-                await ws.send(json.dumps(metadata_stt_ws).encode(), text=True)
+                await ws.send_json(json.dumps(metadata_stt_ws).encode())
 
                 async for chunk in stream:
-                    await ws.send(chunk, text=False)
+                    await ws.send_bytes(chunk)
 
-                await ws.send(json.dumps({"type": "eof"}).encode(), text=True)
+                await ws.send_json(json.dumps({"type": "eof"}))
 
-                response_msg = await ws.recv()
+                response_msg = await ws.receive(timeout=timeout)
                 return self.handle_response_data(json.loads(response_msg))
         else:
             async for chunk in stream:
