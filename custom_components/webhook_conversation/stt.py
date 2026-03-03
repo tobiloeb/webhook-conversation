@@ -158,30 +158,37 @@ class WebhookConversationSTTEntity(
         ):
             session = async_get_clientsession(self.hass)
 
-            async with session.ws_connect(self._webhook_url, timeout=timeout) as ws:
-                metadata_stt_ws: WebhookConversationSTTWebSocketMetadata = {
-                    "name": f"audio.{metadata.format.value}",
-                    "mime_type": f"audio/{metadata.format.value}",
-                    "language": metadata.language,
-                    "sample_rate": metadata.sample_rate.value,
-                    "bit_rate": metadata.bit_rate.value,
-                    "channels": metadata.channel.value,
-                }
-
+            try:
                 basic_auth = self._get_basic_auth()
-                if basic_auth is not None:
-                    metadata_stt_ws["basic_auth"] = basic_auth
 
-                # First ws message contains metadata about the audio stream and settings
-                await ws.send_json(json.dumps(metadata_stt_ws).encode())
+                async with session.ws_connect(
+                    self._webhook_url, timeout=timeout, auth=basic_auth
+                ) as ws:
+                    metadata_stt_ws: WebhookConversationSTTWebSocketMetadata = {
+                        "name": f"audio.{metadata.format.value}",
+                        "mime_type": f"audio/{metadata.format.value}",
+                        "language": metadata.language,
+                        "sample_rate": metadata.sample_rate.value,
+                        "bit_rate": metadata.bit_rate.value,
+                        "channels": metadata.channel.value,
+                    }
 
-                async for chunk in stream:
-                    await ws.send_bytes(chunk)
+                    # First ws message contains metadata about the audio stream and settings
+                    await ws.send_json(json.dumps(metadata_stt_ws).encode())
 
-                await ws.send_json(json.dumps({"type": "eof"}))
+                    async for chunk in stream:
+                        await ws.send_bytes(chunk)
 
-                response_msg = await ws.receive(timeout=timeout)
-                return self.handle_response_data(json.loads(response_msg))
+                    await ws.send_json(json.dumps({"type": "eof"}))
+
+                    response_msg = await ws.receive(timeout=timeout)
+                    return self.handle_response_data(json.loads(response_msg))
+            except aiohttp.ClientError as err:
+                _LOGGER.error("Error during STT websocket connection: %s", err)
+                return stt.SpeechResult(None, stt.SpeechResultState.ERROR)
+            except (ValueError, KeyError) as err:
+                _LOGGER.error("Error parsing STT response: %s", err)
+                return stt.SpeechResult(None, stt.SpeechResultState.ERROR)
         else:
             async for chunk in stream:
                 audio_data += chunk
