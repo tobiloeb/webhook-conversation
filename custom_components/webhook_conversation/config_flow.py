@@ -298,6 +298,7 @@ class WebhookSubentryFlowHandler(ConfigSubentryFlow):
             not webhook_url.startswith("http://")
             and not webhook_url.startswith("https://")
             and not webhook_url.startswith("ws://")
+            and not webhook_url.startswith("wss://")
         ):
             _LOGGER.error("Invalid webhook URL: %s", webhook_url)
             errors["base"] = "invalid_webhook_url"

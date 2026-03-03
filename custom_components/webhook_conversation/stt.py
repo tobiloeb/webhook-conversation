@@ -154,7 +154,9 @@ class WebhookConversationSTTEntity(
 
         timeout = self._subentry.data.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)
 
-        if self._webhook_url.startswith("ws://"):
+        if self._webhook_url.startswith("ws://") or self._webhook_url.startswith(
+            "wss://"
+        ):
             async with websockets.connect(
                 self._webhook_url, close_timeout=timeout
             ) as ws:
