@@ -125,7 +125,7 @@ class WebhookConversationSTTEntity(
         """Return a list of supported channels."""
         return [stt.AudioChannels.CHANNEL_MONO]
 
-    def handle_response_data(self, response_json: json) -> stt.SpeechResult:
+    def handle_response_data(self, response_json: dict) -> stt.SpeechResult:
         output_field = self._subentry.data.get(CONF_OUTPUT_FIELD, DEFAULT_OUTPUT_FIELD)
 
         if output_field in response_json:

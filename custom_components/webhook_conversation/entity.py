@@ -74,6 +74,7 @@ class WebhookConversationBaseEntity(Entity):
                     "Basic authentication configured but credentials missing"
                 )
                 return None
+        return None
 
     def _get_auth_headers(self) -> dict[str, str]:
         """Get authentication headers based on configured auth type."""
