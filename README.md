@@ -214,7 +214,6 @@ This example workflow includes:
 First text message in WebSocket:
 ```json
 {
-  "basic_auth": "base64EncodedString",
   "name": "audio.wav",
   "mime_type": "audio/wav",
   "language": "en-US",
@@ -233,7 +232,7 @@ First text message in WebSocket:
 >
 > For **STT** via http/https: The audio data is automatically converted to the appropriate format and encoded as base64. The webhook should return a JSON response with the transcribed text in the configured output field (default: "output").
 >
-> For **STT** via ws: The audio data is streamed directly as byte stream. The websocket should return a JSON response with the transcribed text in the configured output field (default: "output").
+> For **STT** via ws/wss: The audio data is streamed directly as byte stream. The websocket should return a JSON response with the transcribed text in the configured output field (default: "output").
 
 ## Authentication
 

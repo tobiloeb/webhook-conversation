@@ -191,7 +191,7 @@ class WebhookConversationSTTEntity(
                 _LOGGER.error("Error during STT websocket connection: %s", err)
                 return stt.SpeechResult(None, stt.SpeechResultState.ERROR)
             except (ValueError, KeyError) as err:
-                _LOGGER.error("Error parsing STT response: %s", err)
+                _LOGGER.error("Error parsing STT websocket response: %s", err)
                 return stt.SpeechResult(None, stt.SpeechResultState.ERROR)
         else:
             async for chunk in stream:
