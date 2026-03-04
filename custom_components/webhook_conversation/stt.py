@@ -159,10 +159,14 @@ class WebhookConversationSTTEntity(
             session = async_get_clientsession(self.hass)
 
             try:
-                basic_auth = self._get_basic_auth()
+                username, password = self._get_basic_auth()
+                if username and password is not None:
+                    auth = aiohttp.BasicAuth(username, password)
+                else:
+                    auth = None
 
                 async with session.ws_connect(
-                    self._webhook_url, timeout=timeout, auth=basic_auth
+                    self._webhook_url, timeout=timeout, auth=auth
                 ) as ws:
                     metadata_stt_ws: WebhookConversationSTTWebSocketMetadata = {
                         "name": f"audio.{metadata.format.value}",
