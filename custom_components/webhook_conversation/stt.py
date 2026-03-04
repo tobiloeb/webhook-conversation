@@ -174,15 +174,15 @@ class WebhookConversationSTTEntity(
                     }
 
                     # First ws message contains metadata about the audio stream and settings
-                    await ws.send_json(json.dumps(metadata_stt_ws).encode())
+                    await ws.send_json(metadata_stt_ws)
 
                     async for chunk in stream:
                         await ws.send_bytes(chunk)
 
-                    await ws.send_json(json.dumps({"type": "eof"}))
+                    await ws.send_json({"type": "eof"})
 
-                    response_msg = await ws.receive(timeout=timeout)
-                    return self.handle_response_data(json.loads(response_msg))
+                    response_msg = await ws.receive_json(timeout=timeout)
+                    return self.handle_response_data(response_msg)
             except aiohttp.ClientError as err:
                 _LOGGER.error("Error during STT websocket connection: %s", err)
                 return stt.SpeechResult(None, stt.SpeechResultState.ERROR)
