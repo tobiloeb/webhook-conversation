@@ -3,20 +3,19 @@
 from __future__ import annotations
 
 import base64
-from collections.abc import AsyncIterable
 import io
 import logging
-from pathlib import Path
 import wave
+from collections.abc import AsyncIterable
+from pathlib import Path
+from typing import Any
 
 import aiohttp
-
 from homeassistant.components import stt
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-import json
 
 from .const import (
     CONF_OUTPUT_FIELD,
@@ -125,7 +124,7 @@ class WebhookConversationSTTEntity(
         """Return a list of supported channels."""
         return [stt.AudioChannels.CHANNEL_MONO]
 
-    def handle_response_data(self, response_json: dict) -> stt.SpeechResult:
+    def handle_response_data(self, response_json: dict[str, Any]) -> stt.SpeechResult:
         output_field = self._subentry.data.get(CONF_OUTPUT_FIELD, DEFAULT_OUTPUT_FIELD)
 
         if output_field in response_json:
