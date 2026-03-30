@@ -16,6 +16,7 @@ from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers.chat_session import current_session
 
 from .const import (
     CONF_OUTPUT_FIELD,
@@ -175,6 +176,10 @@ class WebhookConversationSTTEntity(
                         "bit_rate": metadata.bit_rate.value,
                         "channels": metadata.channel.value,
                     }
+                    if chat_session := current_session.get():
+                        metadata_stt_ws["conversation_id"] = (
+                            chat_session.conversation_id
+                        )
 
                     # First ws message contains metadata about the audio stream and settings
                     await ws.send_json(metadata_stt_ws)

@@ -1,22 +1,39 @@
 """Conversation platform for webhook conversation integration."""
 
-from collections.abc import AsyncIterator
+from collections import defaultdict
 import json
 import logging
+from collections.abc import AsyncIterator
+from operator import attrgetter
 from typing import Any, Literal
+from decimal import Decimal
+from enum import Enum
+import time
+
 
 from homeassistant.components import conversation
+from homeassistant.components.calendar import DOMAIN as CALENDAR_DOMAIN
 from homeassistant.components.homeassistant.exposed_entities import async_should_expose
+from homeassistant.components.script import DOMAIN as SCRIPT_DOMAIN
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.const import MATCH_ALL
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import (
     area_registry as ar,
+)
+from homeassistant.helpers import (
     device_registry as dr,
+)
+from homeassistant.helpers import (
     entity_registry as er,
 )
+from homeassistant.helpers import (
+    floor_registry as fr,
+)
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.util import dt as dt_util
+from homeassistant.util import yaml as yaml_util
 
 from .const import DOMAIN
 from .entity import WebhookConversationLLMBaseEntity
@@ -49,6 +66,7 @@ class WebhookConversationEntity(
     """Webhook conversation agent."""
 
     _attr_supported_features = conversation.ConversationEntityFeature.CONTROL
+    exposed_entities = None
 
     def __init__(self, config_entry: ConfigEntry, subentry: ConfigSubentry) -> None:
         """Initialize the agent."""
@@ -63,6 +81,9 @@ class WebhookConversationEntity(
     async def async_added_to_hass(self) -> None:
         """When entity is added to Home Assistant."""
         await super().async_added_to_hass()
+        # self.exposed_entities: dict[str, Any] = (
+        #    self._get_home_structure_with_exposed_entities()
+        # )
         conversation.async_set_agent(self.hass, self._config_entry, self)
 
     async def async_will_remove_from_hass(self) -> None:
@@ -125,9 +146,8 @@ class WebhookConversationEntity(
             if user_input.device_id
             else None
         )
-        payload["exposed_entities"] = json.dumps(
-            self._get_exposed_entities(), default=set_default
-        )
+        payload["exposed_entities"] = self._get_home_structure_with_exposed_entities()
+
         payload["language"] = user_input.language
         payload["user_id"] = user_input.context.user_id
 
@@ -203,3 +223,173 @@ class WebhookConversationEntity(
                 }
             )
         return exposed_entities
+
+    def _get_home_structure_with_exposed_entities(
+        self,
+        include_state: bool = True,
+    ) -> dict[str, dict[str, dict[str, Any]]]:
+        start = time.perf_counter()
+        """Get exposed entities.
+
+        Splits out calendars and scripts.
+        """
+        area_registry = ar.async_get(self.hass)
+        entity_registry = er.async_get(self.hass)
+        device_registry = dr.async_get(self.hass)
+        floor_registry = fr.async_get(self.hass)
+        interesting_attributes = {
+            "temperature",
+            "current_temperature",
+            "brightness",
+            "percentage",
+            "volume_level",
+            "media_title",
+        }
+
+        data: dict[str, dict[str, Any]] = {
+            CALENDAR_DOMAIN: {},
+        }
+
+        ignored: dict[str, dict[str, Any]] = {
+            SCRIPT_DOMAIN: {},
+        }
+
+        floors_dict: dict[str, dict[str, Any]] = {}
+        rooms_dict: dict[str, dict[str, Any]] = {}
+
+        # Hilfsstruktur: floors[floor_id][area_id] -> list[devices]
+        floors_devices: dict[str, dict[str, list[dict[str, Any]]]] = defaultdict(
+            lambda: defaultdict(list)
+        )
+
+        entities_list: list[dict[str, Any]] = []
+
+        for state in sorted(self.hass.states.async_all(), key=attrgetter("name")):
+            if not async_should_expose(self.hass, conversation.DOMAIN, state.entity_id):
+                continue
+
+            entity_entry = entity_registry.async_get(state.entity_id)
+            names = [state.name]
+            area_entry = None
+            _LOGGER.info(
+                "Entity %s is exposed:",
+                state.name,
+            )
+
+            if entity_entry is not None:
+                names.extend(entity_entry.aliases)
+
+                # 1. Area direkt an der Entity
+                if entity_entry.area_id:
+                    area_entry = area_registry.async_get_area(entity_entry.area_id)
+                # 2. andernfalls Area über Device
+                elif entity_entry.device_id and (
+                    device := device_registry.async_get(entity_entry.device_id)
+                ):
+                    if device.area_id:
+                        area_entry = area_registry.async_get_area(device.area_id)
+
+            info: dict[str, Any] = {
+                "entity_id": state.entity_id,
+                "names": ", ".join(names),
+                "domain": state.domain,
+            }
+
+            if include_state:
+                info["state"] = state.state
+
+                if state.attributes.get("device_class") == "timestamp" and state.state:
+                    if (parsed_utc := dt_util.parse_datetime(state.state)) is not None:
+                        info["state"] = dt_util.as_local(parsed_utc).isoformat()
+
+            if include_state and (
+                attributes := {
+                    attr_name: (
+                        str(attr_value)
+                        if isinstance(attr_value, (Enum, Decimal, int))
+                        else attr_value
+                    )
+                    for attr_name, attr_value in state.attributes.items()
+                    if attr_name in interesting_attributes
+                }
+            ):
+                info["attributes"] = attributes
+
+            # Area- / Floor-Infos auflösen
+            if area_entry is not None:
+                area_id = area_entry.id
+                area_name = area_entry.name
+                area_aliases = list(area_entry.aliases)
+
+                # Room-Metadaten speichern (einmalig pro area_id)
+                if area_id not in rooms_dict:
+                    rooms_dict[area_id] = {
+                        "id": area_id,
+                        "name": area_name,
+                        "aliases": area_aliases,
+                    }
+
+                floor_id = area_entry.floor_id  # kann None sein
+                if floor_id is not None:
+                    floor_entry = floor_registry.async_get_floor(floor_id)
+                    if floor_entry is not None:
+                        # Floor-Metadaten speichern (einmalig pro floor_id)
+                        if floor_id not in floors_dict:
+                            floors_dict[floor_id] = {
+                                "id": floor_id,
+                                "name": floor_entry.name,
+                                "aliases": list(floor_entry.aliases),
+                                "level": floor_entry.level,
+                            }
+
+                        # Device dem Floor/Room zuordnen
+                        floors_devices[floor_id][area_id].append(info)
+                else:
+                    # Area ohne Floor: du kannst hier entweder einen speziellen Floor
+                    # wie "Unassigned" anlegen oder sie ignorieren
+                    pass
+
+            entities_list.append(info)
+
+        # Jetzt hierarchische Struktur bauen
+        home: dict[str, Any] = {"floors": []}
+
+        for floor_id, floor_meta in floors_dict.items():
+            floor_obj = {
+                "id": floor_meta["id"],
+                "name": floor_meta["name"],
+                "aliases": floor_meta.get("aliases", []),
+                "level": floor_meta.get("level"),
+                "rooms": [],
+            }
+
+            rooms_for_floor = floors_devices.get(floor_id, {})
+            for area_id, devices in rooms_for_floor.items():
+                room_meta = rooms_dict.get(
+                    area_id, {"id": area_id, "name": area_id, "aliases": []}
+                )
+                room_obj = {
+                    "id": room_meta["id"],
+                    "name": room_meta["name"],
+                    "aliases": room_meta.get("aliases", []),
+                    "devices": devices,
+                }
+                # Räume innerhalb der Etage sortieren (optional)
+                floor_obj["rooms"].append(room_obj)
+
+            floor_obj["rooms"].sort(key=lambda r: r["name"])
+            home["floors"].append(floor_obj)
+
+        # Etagen sortieren, z.B. nach level, fallback Name
+        home["floors"].sort(
+            key=lambda f: (f.get("level") is None, f.get("level", 0), f["name"])
+        )
+
+        # JSON für dein System Prompt
+        json_output = json.dumps(home, ensure_ascii=False, indent=2)
+
+        _LOGGER.info(
+            "get exposed entities time to take %s:",
+            time.perf_counter() - start,
+        )
+        return json_output
