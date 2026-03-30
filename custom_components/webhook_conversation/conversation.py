@@ -10,6 +10,8 @@ from decimal import Decimal
 from enum import Enum
 import time
 
+from voluptuous import extra
+
 
 from homeassistant.components import conversation
 from homeassistant.components.calendar import DOMAIN as CALENDAR_DOMAIN
@@ -147,7 +149,7 @@ class WebhookConversationEntity(
             else None
         )
         payload["exposed_entities"] = self._get_home_structure_with_exposed_entities()
-
+        payload["area"] = self._get_current_area(user_input.as_llm_context(DOMAIN))
         payload["language"] = user_input.language
         payload["user_id"] = user_input.context.user_id
 
@@ -223,6 +225,20 @@ class WebhookConversationEntity(
                 }
             )
         return exposed_entities
+
+    def _get_current_area(self, llm_context: str) -> str | None:
+        area: ar.AreaEntry | None = None
+        if llm_context.device_id:
+            device_reg = dr.async_get(self.hass)
+            device = device_reg.async_get(llm_context.device_id)
+
+            if device:
+                area_reg = ar.async_get(self.hass)
+                area = area_reg.async_get_area(device.area_id)
+
+        if area:
+            return {area.name}
+        return None
 
     def _get_home_structure_with_exposed_entities(
         self,

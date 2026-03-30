@@ -53,6 +53,7 @@ class WebhookConversationPayload(TypedDict):
     exposed_entities: NotRequired[dict[str, Any] | None]
     language: NotRequired[str]
     user_id: NotRequired[str | None]
+    area: NotRequired[str | None]
 
     # task fields
     binary_objects: NotRequired[list[WebhookConversationBinaryObject]]
