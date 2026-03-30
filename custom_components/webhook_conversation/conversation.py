@@ -237,7 +237,7 @@ class WebhookConversationEntity(
                 area = area_reg.async_get_area(device.area_id)
 
         if area:
-            return {area.name}
+            return area.name
         return None
 
     def _get_home_structure_with_exposed_entities(
