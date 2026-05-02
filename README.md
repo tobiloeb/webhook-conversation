@@ -232,7 +232,13 @@ First text message in WebSocket:
 >
 > For **STT** via http/https: The audio data is automatically converted to the appropriate format and encoded as base64. The webhook should return a JSON response with the transcribed text in the configured output field (default: "output").
 >
-> For **STT** via ws/wss: The audio data is streamed directly as byte stream. The websocket should return a JSON response with the transcribed text in the configured output field (default: "output").
+> For **STT** via ws/wss: The websocket message sequence is:
+> 1. a first **text** frame containing the JSON metadata shown above,
+> 2. one or more **binary** frames containing the audio bytes,
+> 3. a final **text** frame with `{"type": "eof"}` to mark the end of the audio stream,
+> 4. a final **text** frame from the webhook containing the JSON response with the transcribed text in the configured output field (default: `output`).
+> 
+> The binary frames contain the audio payload only. For WAV/PCM-style input, the streamed bytes are **raw PCM samples** matching the provided `sample_rate`, `bit_rate`, and `channels` metadata, **not** a complete WAV file with container/header bytes. For other encoded formats, treat the binary frames as the actual encoded file bytes for that format. WebSocket webhook implementations should therefore decode the stream based on the metadata JSON and wait for the `eof` marker before finalizing transcription.
 
 ## Authentication
 
