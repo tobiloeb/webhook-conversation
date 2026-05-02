@@ -152,13 +152,16 @@ class WebhookConversationLLMBaseEntity(WebhookConversationBaseEntity):
                     if line_str:
                         try:
                             chunk_data = json.loads(line_str)
-                            if (
-                                chunk_data.get("type") == "item"
-                                and "content" in chunk_data
-                            ):
+                            chunk_type = chunk_data.get("type")
+                            if chunk_type == "item" and "content" in chunk_data:
                                 yield chunk_data["content"]
-                            elif chunk_data.get("type") == "end":
-                                break
+                            elif chunk_type == "error":
+                                raise HomeAssistantError(
+                                    f"n8n error: {chunk_data.get('message', chunk_data)}"
+                                )
+                            # We don't break on "end" because n8n can send multiple
+                            # begin/end blocks when using tools or intermediate steps.
+                            # We keep reading until the stream actually closes.
                         except json.JSONDecodeError:
                             _LOGGER.warning(
                                 "Failed to parse streaming response chunk: %s", line_str
