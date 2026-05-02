@@ -35,6 +35,17 @@ class WebhookConversationBinaryObject(TypedDict):
     data: str
 
 
+class WebhookConversationSTTWebSocketMetadata(TypedDict):
+    """Metadata for the first STT websocket payload."""
+
+    name: str
+    mime_type: str
+    language: str
+    sample_rate: int
+    bit_rate: int
+    channels: int
+
+
 class WebhookConversationPayload(TypedDict):
     """Base payload shared by webhook calls."""
 

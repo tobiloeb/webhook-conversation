@@ -164,23 +164,27 @@ def _get_subentry_schema(
 
         # TTS-specific configuration
         if subentry_type == "tts":
-            schema_dict[vol.Optional(
-                CONF_VOICES,
-                description={"suggested_value": options.get(CONF_VOICES, [])},
-                default=[],
-            )] = TextSelector(TextSelectorConfig(multiple=True))
+            schema_dict[
+                vol.Optional(
+                    CONF_VOICES,
+                    description={"suggested_value": options.get(CONF_VOICES, [])},
+                    default=[],
+                )
+            ] = TextSelector(TextSelectorConfig(multiple=True))
 
         # STT-specific configuration
         elif subentry_type == "stt":
-            schema_dict[vol.Required(
-                CONF_OUTPUT_FIELD,
-                description={
-                    "suggested_value": options.get(
-                        CONF_OUTPUT_FIELD, DEFAULT_OUTPUT_FIELD
-                    )
-                },
-                default=DEFAULT_OUTPUT_FIELD,
-            )] = str
+            schema_dict[
+                vol.Required(
+                    CONF_OUTPUT_FIELD,
+                    description={
+                        "suggested_value": options.get(
+                            CONF_OUTPUT_FIELD, DEFAULT_OUTPUT_FIELD
+                        )
+                    },
+                    default=DEFAULT_OUTPUT_FIELD,
+                )
+            ] = str
 
     return vol.Schema(schema_dict)
 
@@ -290,8 +294,11 @@ class WebhookSubentryFlowHandler(ConfigSubentryFlow):
         )
 
         webhook_url: str = user_input[CONF_WEBHOOK_URL]
-        if not webhook_url.startswith("http://") and not webhook_url.startswith(
-            "https://"
+        if (
+            not webhook_url.startswith("http://")
+            and not webhook_url.startswith("https://")
+            and not webhook_url.startswith("ws://")
+            and not webhook_url.startswith("wss://")
         ):
             _LOGGER.error("Invalid webhook URL: %s", webhook_url)
             errors["base"] = "invalid_webhook_url"
