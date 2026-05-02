@@ -15,6 +15,7 @@ from homeassistant.components import stt
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.chat_session import current_session
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .const import (
@@ -149,6 +150,9 @@ class WebhookConversationSTTEntity(
     ) -> stt.SpeechResult:
         """Process an audio stream to STT service."""
         audio_data = b""
+
+        if chat_session := current_session.get():
+            payload["conversation_id"] = chat_session.conversation_id
 
         timeout = self._subentry.data.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)
 
