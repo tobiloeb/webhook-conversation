@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 import logging
+from collections.abc import Mapping
 from typing import Any, cast
 
 import aiohttp
-from propcache.api import cached_property
-
 from homeassistant.components.tts import (
     ATTR_VOICE,
     TextToSpeechEntity,
@@ -20,6 +18,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from propcache.api import cached_property
 
 from .const import CONF_SUPPORTED_LANGUAGES, CONF_TIMEOUT, CONF_VOICES, DEFAULT_TIMEOUT
 from .entity import WebhookConversationBaseEntity
@@ -99,8 +98,10 @@ class WebhookConversationTextToSpeechEntity(
             "language": language,
         }
 
-        if voice := cast(str, options.get(ATTR_VOICE)):
-            payload["voice"] = voice
+        if voice := options.get(ATTR_VOICE):
+            payload["voice"] = (
+                voice.voice_id if isinstance(voice, Voice) else str(voice)
+            )
 
         async with session.post(
             self._webhook_url,

@@ -77,7 +77,7 @@ class WebhookConversationBaseEntity(Entity):
         headers = {"Content-Type": "application/json"}
 
         username, password = self._get_basic_auth()
-        if username and password is not None:
+        if username and password:
             credentials = base64.b64encode(f"{username}:{password}".encode()).decode()
             headers["Authorization"] = f"Basic {credentials}"
 
@@ -95,7 +95,11 @@ class WebhookConversationLLMBaseEntity(WebhookConversationBaseEntity):
             CONF_ENABLE_STREAMING, DEFAULT_ENABLE_STREAMING
         )
 
-    async def _send_payload(self, payload: WebhookConversationPayload) -> Any:
+    async def _send_payload(
+        self,
+        payload: WebhookConversationPayload,
+        allow_tool_only: bool = False,
+    ) -> dict[str, Any]:
         """Send the payload to the webhook."""
         _LOGGER.debug(
             "Webhook request: %s",
@@ -122,15 +126,18 @@ class WebhookConversationLLMBaseEntity(WebhookConversationBaseEntity):
         output_field: str = self._subentry.data.get(
             CONF_OUTPUT_FIELD, DEFAULT_OUTPUT_FIELD
         )
-        if not isinstance(result, dict) or output_field not in result:
+        if not isinstance(result, dict) or (
+            output_field not in result
+            and not (allow_tool_only and "tool_calls" in result)
+        ):
             raise HomeAssistantError(f"Invalid webhook response: {result}")
 
         _LOGGER.debug("Webhook response: %s", result)
-        return result.get(output_field)
+        return result
 
     async def _send_payload_streaming(
         self, payload: WebhookConversationPayload
-    ) -> AsyncGenerator[str]:
+    ) -> AsyncGenerator[dict[str, Any]]:
         """Send the payload to the webhook and stream the response."""
         _LOGGER.debug("Webhook streaming request: %s", payload)
 
@@ -156,13 +163,15 @@ class WebhookConversationLLMBaseEntity(WebhookConversationBaseEntity):
                     if line_str:
                         try:
                             chunk_data = json.loads(line_str)
-                            if (
-                                chunk_data.get("type") == "item"
-                                and "content" in chunk_data
-                            ):
-                                yield chunk_data["content"]
-                            elif chunk_data.get("type") == "end":
-                                break
+                            chunk_type = chunk_data.get("type")
+                            if chunk_type == "error":
+                                raise HomeAssistantError(
+                                    f"n8n error: {chunk_data.get('message', chunk_data)}"
+                                )
+                            # We don't break on "end" because n8n can send multiple
+                            # begin/end blocks when using tools or intermediate steps.
+                            # We keep reading until the stream actually closes.
+                            yield chunk_data
                         except json.JSONDecodeError:
                             _LOGGER.warning(
                                 "Failed to parse streaming response chunk: %s", line_str
@@ -170,16 +179,17 @@ class WebhookConversationLLMBaseEntity(WebhookConversationBaseEntity):
                             continue
 
     def _build_payload(
-        self, chat_log: conversation.ChatLog
+        self, chat_log: conversation.ChatLog, include_last: bool = False
     ) -> WebhookConversationPayload:
         """Create a base payload from the chat log for webhook calls."""
         system_message = chat_log.content[0]
         if not isinstance(system_message, conversation.SystemContent):
             raise TypeError("First message must be a system message")
 
+        end_idx = len(chat_log.content) if include_last else -1
         messages = [
             self._convert_content_to_param(content)
-            for content in chat_log.content[1:-1]
+            for content in chat_log.content[1:end_idx]
         ]
 
         return WebhookConversationPayload(
@@ -196,11 +206,35 @@ class WebhookConversationLLMBaseEntity(WebhookConversationBaseEntity):
         self, content: conversation.Content
     ) -> WebhookConversationMessage:
         """Convert native chat content into a simple dict."""
+        if isinstance(content, conversation.ToolResultContent):
+            return WebhookConversationMessage(
+                {
+                    "role": content.role,
+                    "content": json.dumps(content.tool_result)
+                    if content.tool_result is not None
+                    else "",
+                    "tool_call_id": content.tool_call_id,
+                    "tool_name": content.tool_name,
+                }
+            )
+        if isinstance(content, conversation.AssistantContent) and content.tool_calls:
+            return WebhookConversationMessage(
+                {
+                    "role": content.role,
+                    "content": content.content or "",
+                    "tool_calls": [
+                        {
+                            "id": tool_call.id,
+                            "name": tool_call.tool_name,
+                            "arguments": tool_call.tool_args,
+                        }
+                        for tool_call in content.tool_calls
+                    ],
+                }
+            )
         return WebhookConversationMessage(
             {
                 "role": content.role,
-                "content": str(content.tool_result or "")
-                if isinstance(content, conversation.ToolResultContent)
-                else content.content or "",
+                "content": content.content or "",
             }
         )

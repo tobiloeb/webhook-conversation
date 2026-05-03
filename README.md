@@ -6,7 +6,7 @@
 ![GitHub Sponsors](https://img.shields.io/github/sponsors/eulemitkeule?logo=GitHub-Sponsors)
 
 > [!NOTE]
-> This integration requires Home Assistant `>=2025.8`.
+> This integration requires Home Assistant `>=2026.4`.
 
 _Integration to connect Home Assistant conversation agents and AI features to external systems through webhooks._
 
@@ -138,6 +138,7 @@ This example workflow includes:
 {
   "conversation_id": "abc123",
   "user_id": "user id from ha",
+  "user_name": "John Doe",
   "language": "de-DE",
   "agent_id": "conversation.webhook_agent",
   "device_id": "satellite_device_id",
@@ -209,20 +210,6 @@ This example workflow includes:
 }
 ```
 
-##### For **STT (Speech-to-Text) via WebSocket**
-
-First text message in WebSocket:
-```json
-{
-  "name": "audio.wav",
-  "mime_type": "audio/wav",
-  "language": "en-US",
-  "sample_rate": 16000,
-  "bit_rate": 16,
-  "channels": 1
-}
-```
-
 > [!NOTE]
 > For **conversations**: The `device_id` and `device_info` fields are only set when the conversation was initiated via a voice satellite. The `language` field contains the language code (e.g., "de-DE") configured for the conversation. The `agent_id` field contains the entity ID of the conversation agent.
 >
@@ -230,9 +217,15 @@ First text message in WebSocket:
 >
 > For **TTS**: The `voice` field is only included when a specific voice is requested and the TTS service has been configured with available voices. The webhook should return audio data with an appropriate Content-Type header (e.g., "audio/wav" or "audio/mp3").
 >
-> For **STT** via http/https: The audio data is automatically converted to the appropriate format and encoded as base64. The webhook should return a JSON response with the transcribed text in the configured output field (default: "output").
+> For **STT** via http/https: The audio data is automatically converted to the appropriate format and encoded as base64. The `conversation_id` field is included when the STT request is part of a voice pipeline run, allowing you to correlate STT requests with their corresponding conversation webhook calls. The webhook should return a JSON response with the transcribed text in the configured output field (default: "output").
 >
-> For **STT** via ws/wss: The audio data is streamed directly as byte stream. The websocket should return a JSON response with the transcribed text in the configured output field (default: "output").
+> For **STT** via ws/wss: The websocket message sequence is:
+> 1. a first **text** frame containing the JSON metadata shown above,
+> 2. one or more **binary** frames containing the audio bytes,
+> 3. a final **text** frame with `{"type": "eof"}` to mark the end of the audio stream,
+> 4. a final **text** frame from the webhook containing the JSON response with the transcribed text in the configured output field (default: `output`).
+> 
+> The binary frames contain the audio payload only. For WAV/PCM-style input, the streamed bytes are **raw PCM samples** matching the provided `sample_rate`, `bit_rate`, and `channels` metadata, **not** a complete WAV file with container/header bytes. For other encoded formats, treat the binary frames as the actual encoded file bytes for that format. WebSocket webhook implementations should therefore decode the stream based on the metadata JSON and wait for the `eof` marker before finalizing transcription.
 
 ## Authentication
 
@@ -458,6 +451,7 @@ Once configured, your TTS webhook service will appear in Home Assistant's TTS se
 ### Supported Audio Formats
 
 The TTS webhook integration supports:
+
 - **WAV**: Uncompressed audio format (`audio/wav`)
 - **MP3**: Compressed audio format (`audio/mp3`)
 
