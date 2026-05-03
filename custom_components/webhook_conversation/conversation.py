@@ -275,23 +275,6 @@ class WebhookConversationEntity(
             )
         return exposed_entities
 
-
-def _parse_tool_calls(
-    raw_tool_calls: list[dict[str, Any]] | None,
-) -> list[llm.ToolInput] | None:
-    """Parse tool calls from webhook response into ToolInput objects."""
-    if not raw_tool_calls:
-        return None
-    return [
-        llm.ToolInput(
-            tool_name=tool_call["name"],
-            tool_args=tool_call.get("arguments", {}),
-            id=tool_call.get("id", ""),
-        )
-        for tool_call in raw_tool_calls
-        if "name" in tool_call
-    ] or None
-
     def _get_current_area(self, llm_context: str) -> str | None:
         area: ar.AreaEntry | None = None
         if llm_context.device_id:
@@ -475,3 +458,20 @@ def _parse_tool_calls(
             time.perf_counter() - start,
         )
         return json_output
+
+
+def _parse_tool_calls(
+    raw_tool_calls: list[dict[str, Any]] | None,
+) -> list[llm.ToolInput] | None:
+    """Parse tool calls from webhook response into ToolInput objects."""
+    if not raw_tool_calls:
+        return None
+    return [
+        llm.ToolInput(
+            tool_name=tool_call["name"],
+            tool_args=tool_call.get("arguments", {}),
+            id=tool_call.get("id", ""),
+        )
+        for tool_call in raw_tool_calls
+        if "name" in tool_call
+    ] or None
