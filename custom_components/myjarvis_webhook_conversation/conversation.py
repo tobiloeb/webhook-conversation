@@ -343,11 +343,11 @@ class WebhookConversationEntity(
 
             if entity_entry is not None:
                 names.extend(
-                    entity_entry.aliases.filter(
-                        lambda a: (
-                            not isinstance(a, er.ComputedNameType) and a != state.name
-                        )
-                    )
+                    [
+                        a
+                        for a in entity_entry.aliases
+                        if not isinstance(a, er.ComputedNameType) and a != state.name
+                    ]
                 )
 
                 # 1. Area direkt an der Entity
