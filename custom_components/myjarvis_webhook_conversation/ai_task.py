@@ -39,7 +39,7 @@ async def async_setup_entry(
 
 
 class WebhookAITaskEntity(WebhookConversationLLMBaseEntity, ai_task.AITaskEntity):
-    """Webhook AI Task entity."""
+    """MyJarvis AI Task entity."""
 
     _attr_supported_features = (
         ai_task.AITaskEntityFeature.GENERATE_DATA

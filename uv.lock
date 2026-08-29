@@ -1864,7 +1864,7 @@ wheels = [
 ]
 
 [[package]]
-name = "webhook-conversation"
+name = "myjarvis-webhook-conversation"
 version = "0.0.0.dev0"
 source = { virtual = "." }
 

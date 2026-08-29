@@ -1,4 +1,4 @@
-"""Config flow for the webhook conversation integration."""
+"""Config flow for the MyJarvis webhook conversation integration."""
 
 from __future__ import annotations
 
@@ -313,7 +313,7 @@ class WebhookSubentryFlowHandler(ConfigSubentryFlow):
 
                 try:
                     language_util.Dialect.parse(language_code)
-                except ValueError, AttributeError:
+                except (ValueError, AttributeError):
                     errors[CONF_SUPPORTED_LANGUAGES] = "invalid_language_code"
                     break
 

@@ -79,7 +79,7 @@ async def async_setup_entry(
 class WebhookConversationSTTEntity(
     WebhookConversationBaseEntity, stt.SpeechToTextEntity
 ):
-    """Webhook STT entity."""
+    """MyJarvis STT entity."""
 
     _attr_has_entity_name = False
     _attr_name: str

@@ -1,9 +1,8 @@
-# Webhook Conversation
+# Webhook Conversation for MyJarvis
 
-[![My Home Assistant](https://img.shields.io/badge/Home%20Assistant-%2341BDF5.svg?style=flat&logo=home-assistant&label=My)](https://my.home-assistant.io/redirect/hacs_repository/?owner=EuleMitKeule&repository=webhook-conversation&category=integration)
+[![My Home Assistant](https://img.shields.io/badge/Home%20Assistant-%2341BDF5.svg?style=flat&logo=home-assistant&label=My)](https://my.home-assistant.io/redirect/hacs_repository/?owner=tobiloeb&repository=webhook-conversation&category=integration)
 
-![GitHub License](https://img.shields.io/github/license/eulemitkeule/webhook-conversation)
-![GitHub Sponsors](https://img.shields.io/github/sponsors/eulemitkeule?logo=GitHub-Sponsors)
+![GitHub License](https://img.shields.io/github/license/tobiloeb/webhook-conversation)
 
 > [!NOTE]
 > This integration requires Home Assistant `>=2026.4`.
@@ -39,14 +38,17 @@ _Integration to connect Home Assistant conversation agents and AI features to ex
 1. Make sure [HACS](https://hacs.xyz/) is installed
 2. Add this repository as a custom repository in HACS:
    - Go to HACS → ⋮ → Custom repositories
-   - Add `https://github.com/eulemitkeule/webhook-conversation` with type `Integration`
-3. Search for "Webhook Conversation" in HACS and install it
+   - Add `https://github.com/tobiloeb/webhook-conversation` with type `Integration`
+3. Search for "Webhook Conversation for MyJarvis" in HACS and install it
 4. Restart Home Assistant
+
+> [!NOTE]
+> This fork installs directly from the `master` branch, so every push to `master` is picked up by HACS as an update.
 
 ### Manual Installation
 
-1. Download the latest release from the [releases page](https://github.com/eulemitkeule/webhook-conversation/releases)
-2. Extract the `custom_components/webhook_conversation` folder to your `custom_components` directory
+1. Clone or download this repository
+2. Copy the `custom_components/myjarvis_webhook_conversation` folder to your `custom_components` directory
 3. Restart Home Assistant
 
 ## Configuration
@@ -58,12 +60,12 @@ The setup process consists of two steps:
 #### Step 1: Create the Integration Entry
 
 1. Go to **Settings** → **Devices & Services**
-2. Click **Add Integration** and search for "Webhook Conversation"
+2. Click **Add Integration** and search for "Webhook Conversation for MyJarvis"
 3. Add the integration (no configuration options are required at this stage)
 
 #### Step 2: Add Conversation Agents and AI Tasks
 
-After the integration is added, you'll see the "Webhook Conversation" integration on your integrations page. From there:
+After the integration is added, you'll see the "Webhook Conversation for MyJarvis" integration on your integrations page. From there:
 
 1. **Add Conversation Agent**: Click the **"Add Entry"** button on the integration page and select **"Conversation Agent"** to create a new webhook-based conversation agent. Configure it with:
    - **Webhook URL**: The URL of your webhook endpoint (remember to activate the workflow in n8n and to use the production webhook URL)
@@ -464,8 +466,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## Support
 
-- 🐛 [Report issues](https://github.com/eulemitkeule/webhook-conversation/issues)
-- 💬 [GitHub Discussions](https://github.com/eulemitkeule/webhook-conversation/discussions)
+- 🐛 [Report issues](https://github.com/tobiloeb/webhook-conversation/issues)
 
 ## License
 

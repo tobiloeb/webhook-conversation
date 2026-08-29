@@ -1,7 +1,7 @@
 [project]
-name = "webhook-conversation"
-authors = [{ name = "Lennard Beers", email = "l.beers@outlook.de" }]
-maintainers = [{ name = "Lennard Beers", email = "l.beers@outlook.de" }]
+name = "myjarvis-webhook-conversation"
+authors = [{ name = "Tobias" }]
+maintainers = [{ name = "Tobias" }]
 license = "MIT"
 keywords = [
     "homeassistant",
@@ -15,24 +15,24 @@ keywords = [
     "home-assistant",
     "home-assistant-custom-component",
     "home-assistant-integration",
-    "home-assistant-integration",
+    "myjarvis",
 ]
 classifiers = [
     "Intended Audience :: Users",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.14",
 ]
-description = "A custom component for Home Assistant to use webhooks for conversation and AI features."
+description = "A custom component for Home Assistant to use webhooks for conversation and AI features (MyJarvis fork)."
 readme = "README.md"
 requires-python = ">=3.14.2"
 version = "0.0.0-dev"
 dependencies = []
 
 [project.urls]
-Repository = "https://github.com/eulemitkeule/webhook-conversation"
-Documentation = "https://github.com/eulemitkeule/webhook-conversation/blob/master/README.md"
-Changelog = "https://github.com/EuleMitKeule/webhook-conversation/releases"
-Issues = "https://github.com/eulemitkeule/webhook-conversation/issues"
+Repository = "https://github.com/tobiloeb/webhook-conversation"
+Documentation = "https://github.com/tobiloeb/webhook-conversation/blob/master/README.md"
+Changelog = "https://github.com/tobiloeb/webhook-conversation/releases"
+Issues = "https://github.com/tobiloeb/webhook-conversation/issues"
 
 [dependency-groups]
 dev = ["mypy>=1.17.1", "ruff>=0.12.9", "homeassistant>=2026.4.0"]

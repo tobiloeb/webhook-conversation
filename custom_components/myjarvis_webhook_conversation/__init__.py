@@ -1,4 +1,4 @@
-"""Webhook conversation integration for Home Assistant."""
+"""MyJarvis webhook conversation integration for Home Assistant."""
 
 import logging
 from types import MappingProxyType

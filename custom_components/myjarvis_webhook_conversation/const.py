@@ -4,18 +4,18 @@ from enum import StrEnum
 
 from homeassistant.helpers import llm
 
-DOMAIN = "webhook_conversation"
-MANUFACTURER = "Webhook Conversation"
+DOMAIN = "myjarvis_webhook_conversation"
+MANUFACTURER = "Webhook Conversation for MyJarvis"
 
 # Main config entry constants
 CONF_NAME = "name"
-DEFAULT_TITLE = "Webhook Conversation"
+DEFAULT_TITLE = "Webhook Conversation for MyJarvis"
 
 # Subentry names
-DEFAULT_CONVERSATION_NAME = "Webhook Conversation"
-DEFAULT_AI_TASK_NAME = "Webhook AI Task"
-DEFAULT_TTS_NAME = "Webhook TTS"
-DEFAULT_STT_NAME = "Webhook STT"
+DEFAULT_CONVERSATION_NAME = "Webhook Conversation for MyJarvis"
+DEFAULT_AI_TASK_NAME = "MyJarvis AI Task"
+DEFAULT_TTS_NAME = "MyJarvis TTS"
+DEFAULT_STT_NAME = "MyJarvis STT"
 
 # Subentry configuration constants
 CONF_WEBHOOK_URL = "webhook_url"

@@ -1,17 +1,17 @@
 {
-    "domain": "webhook_conversation",
-    "name": "Webhook Conversation",
+    "domain": "myjarvis_webhook_conversation",
+    "name": "Webhook Conversation for MyJarvis",
     "codeowners": [
-        "@EuleMitKeule"
+        "@tobiloeb"
     ],
     "config_flow": true,
     "dependencies": [
         "conversation"
     ],
-    "documentation": "https://github.com/eulemitkeule/webhook-conversation",
+    "documentation": "https://github.com/tobiloeb/webhook-conversation",
     "integration_type": "service",
     "iot_class": "cloud_polling",
-    "issue_tracker": "https://github.com/eulemitkeule/webhook-conversation/issues",
+    "issue_tracker": "https://github.com/tobiloeb/webhook-conversation/issues",
     "requirements": [
         "voluptuous-openapi"
     ],
