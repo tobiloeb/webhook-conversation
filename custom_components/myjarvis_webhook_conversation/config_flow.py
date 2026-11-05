@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, cast
 
+import aiohttp
 import voluptuous as vol
 
 from homeassistant.config_entries import (
@@ -15,9 +16,13 @@ from homeassistant.config_entries import (
     SubentryFlowResult,
 )
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
     SelectSelector,
     SelectSelectorConfig,
+    SelectSelectorMode,
+    SelectSelectorOptionDict,
     TemplateSelector,
     TextSelector,
     TextSelectorConfig,
@@ -34,6 +39,7 @@ from .const import (
     CONF_SUPPORTED_LANGUAGES,
     CONF_TIMEOUT,
     CONF_USERNAME,
+    CONF_VOICE,
     CONF_VOICES,
     CONF_WEBHOOK_URL,
     DEFAULT_AI_TASK_NAME,
@@ -58,11 +64,40 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
+def _voices_endpoint_url(webhook_url: str) -> str:
+    """Leitet die Voices-URL aus der konfigurierten TTS-Webhook-URL ab."""
+    base = webhook_url.removesuffix("/").removesuffix("/api/tts")
+    return f"{base}/api/tts/voices"
+
+
+async def _fetch_voice_options(
+    hass: HomeAssistant, webhook_url: str
+) -> list[SelectSelectorOptionDict]:
+    """Lädt den Stimmen-Katalog für das Dropdown aus dem Backend."""
+    session = async_get_clientsession(hass)
+    url = _voices_endpoint_url(webhook_url)
+    try:
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+            if resp.status != 200:
+                raise HomeAssistantError(
+                    f"HTTP {resp.status} fetching voices from {url}"
+                )
+            payload = cast(list[dict[str, Any]], await resp.json())
+    except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
+        raise HomeAssistantError(f"Failed to fetch voices from {url}: {exc}") from exc
+
+    return [
+        SelectSelectorOptionDict({"value": voice["id"], "label": voice["label"]})
+        for voice in payload
+    ]
+
+
 def _get_subentry_schema(
     subentry_type: str,
     options: dict[str, Any] | None = None,
     is_new: bool = True,
     hass: HomeAssistant | None = None,
+    voice_options: list[SelectSelectorOptionDict] | None = None,
 ) -> vol.Schema:
     """Return the subentry configuration schema."""
     if options is None:
@@ -164,13 +199,23 @@ def _get_subentry_schema(
 
         # TTS-specific configuration
         if subentry_type == "tts":
+            selected_voice = options.get(CONF_VOICE)
+            if selected_voice is None and (legacy := options.get(CONF_VOICES)):
+                # Migration alter Freitext-Listen: erste Stimme übernehmen.
+                selected_voice = legacy[0] if isinstance(legacy, list) else legacy
+
             schema_dict[
-                vol.Optional(
-                    CONF_VOICES,
-                    description={"suggested_value": options.get(CONF_VOICES, [])},
-                    default=[],
+                vol.Required(
+                    CONF_VOICE,
+                    description={"suggested_value": selected_voice},
+                    default=selected_voice,
                 )
-            ] = TextSelector(TextSelectorConfig(multiple=True))
+            ] = SelectSelector(
+                SelectSelectorConfig(
+                    options=voice_options or [],
+                    mode=SelectSelectorMode.DROPDOWN,
+                )
+            )
 
         # STT-specific configuration
         elif subentry_type == "stt":
@@ -266,6 +311,7 @@ class WebhookSubentryFlowHandler(ConfigSubentryFlow):
     ) -> SubentryFlowResult:
         """Set subentry options."""
         errors: dict[str, str] = {}
+        voice_options: list[SelectSelectorOptionDict] = []
 
         if user_input is None:
             if self._is_new:
@@ -280,12 +326,22 @@ class WebhookSubentryFlowHandler(ConfigSubentryFlow):
             else:
                 options = self._get_reconfigure_subentry().data.copy()
 
-            return self.async_show_form(
-                step_id="set_options",
-                data_schema=_get_subentry_schema(
-                    self._subentry_type, options, self._is_new, self.hass
-                ),
-            )
+            if self._subentry_type == "tts":
+                # Beim allersten Anzeigen eines neuen Subentries gibt es noch
+                # keine Webhook-URL. Das Dropdown wird dann leer gezeigt; nach
+                # dem Submit (auch bei Validierungsfehlern) lädt _show_form den
+                # Katalog und zeigt die Auswahl an.
+                webhook_url = options.get(CONF_WEBHOOK_URL)
+                if webhook_url:
+                    try:
+                        voice_options = await _fetch_voice_options(
+                            self.hass, webhook_url
+                        )
+                    except HomeAssistantError:
+                        _LOGGER.exception("Failed to load voice catalog")
+                        errors["base"] = "voices_fetch_failed"
+
+            return await self._show_form(options, errors, voice_options)
 
         _LOGGER.debug(
             "Processing webhook %s subentry configuration with user input: %s",
@@ -317,14 +373,12 @@ class WebhookSubentryFlowHandler(ConfigSubentryFlow):
                     errors[CONF_SUPPORTED_LANGUAGES] = "invalid_language_code"
                     break
 
+        if self._subentry_type == "tts":
+            if not user_input.get(CONF_VOICE):
+                errors[CONF_VOICE] = "voice_required"
+
         if errors:
-            return self.async_show_form(
-                step_id="set_options",
-                data_schema=_get_subentry_schema(
-                    self._subentry_type, user_input, self._is_new, self.hass
-                ),
-                errors=errors,
-            )
+            return await self._show_form(user_input, errors)
 
         self._user_input = user_input
 
@@ -342,6 +396,30 @@ class WebhookSubentryFlowHandler(ConfigSubentryFlow):
             self._get_entry(),
             self._get_reconfigure_subentry(),
             data=user_input,
+        )
+
+    async def _show_form(
+        self,
+        options: dict[str, Any],
+        errors: dict[str, str],
+        voice_options: list[SelectSelectorOptionDict] | None = None,
+    ) -> SubentryFlowResult:
+        """Show the options form, loading the voice catalog when needed."""
+        if self._subentry_type == "tts" and voice_options is None:
+            webhook_url = options.get(CONF_WEBHOOK_URL)
+            if webhook_url:
+                try:
+                    voice_options = await _fetch_voice_options(self.hass, webhook_url)
+                except HomeAssistantError:
+                    _LOGGER.exception("Failed to load voice catalog")
+                    errors.setdefault("base", "voices_fetch_failed")
+
+        return self.async_show_form(
+            step_id="set_options",
+            data_schema=_get_subentry_schema(
+                self._subentry_type, options, self._is_new, self.hass, voice_options
+            ),
+            errors=errors,
         )
 
     async def async_step_auth(

@@ -79,6 +79,7 @@ class WebhookTTSRequestPayload(TypedDict):
     text: str
     language: str
     voice: NotRequired[str]
+    voice_id: NotRequired[str]
 
 
 class WebhookSTTRequestPayload(TypedDict):

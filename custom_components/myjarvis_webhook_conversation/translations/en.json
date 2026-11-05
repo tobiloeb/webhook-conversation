@@ -85,11 +85,11 @@
             "timeout": "Request timeout (seconds)",
             "auth_type": "Authentication type",
             "supported_languages": "Supported languages",
-            "voices": "Voices"
+            "voice": "Voice"
           },
           "data_description": {
             "supported_languages": "Enter language codes (e.g., en-US, de-DE, fr-FR).",
-            "voices": "Enter voice names."
+            "voice": "Choose the voice from the backend catalog. Each TTS configuration can use a different voice."
           }
         },
         "auth": {
@@ -106,6 +106,8 @@
         "invalid_auth": "Invalid authentication credentials",
         "invalid_language_code": "One or more language codes are invalid. Please use valid language codes like en-US, de-DE, fr-FR.",
         "no_languages_specified": "At least one language must be specified.",
+        "voice_required": "Please select a voice.",
+        "voices_fetch_failed": "Could not load the voice list from the backend. Check the webhook URL and try again.",
         "unknown": "Unexpected error occurred"
       },
       "abort": {

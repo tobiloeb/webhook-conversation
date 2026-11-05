@@ -83,9 +83,10 @@ After the integration is added, you'll see the "Webhook Conversation for MyJarvi
 
 3. **Add TTS (Text-to-Speech)**: Click the **"Add Entry"** button on the integration page and select **"TTS"** to create a webhook-based text-to-speech service. Configure it with:
    - **Webhook URL**: The URL of your webhook endpoint that will handle TTS requests
+   - **Supported Languages**: List of language codes the TTS service supports
+   - **Voice**: Dropdown with all voices offered by the backend (`GET /api/tts/voices`), labeled with provider and voice name (e.g. "Gemini – Charon"). The backend maps the selected voice to the correct provider, model and voice.
    - **Timeout**: The timeout in seconds for waiting for audio response (default: 30 seconds, range: 1-300 seconds)
    - **Supported Languages**: List of supported language codes (e.g., "en-US", "de-DE", "fr-FR")
-   - **Voices**: Optional list of available voice names for speech synthesis
    - **Authentication**: Optional HTTP basic authentication for securing your webhook endpoint
 
 4. **Add STT (Speech-to-Text)**: Click the **"Add Entry"** button on the integration page and select **"STT"** to create a webhook-based speech-to-text service. Configure it with:
@@ -217,7 +218,7 @@ This example workflow includes:
 >
 > For **AI tasks**: The `binary_objects` field is only included when attachments are present in the AI task. The `structure` field is only included when a JSON schema is provided by the action call. The `task_name` field is only included for AI tasks when provided by the action call. Each attachment is converted to base64 format and includes metadata such as filename, file path, and MIME type.
 >
-> For **TTS**: The `voice` field is only included when a specific voice is requested and the TTS service has been configured with available voices. The webhook should return audio data with an appropriate Content-Type header (e.g., "audio/wav" or "audio/mp3").
+> For **TTS**: The `voice_id` field contains the selected voice identifier from the backend catalog (see `GET /api/tts/voices`) and is always sent. The legacy `voice` field is only sent by older configurations. The webhook should return audio data with an appropriate Content-Type header (e.g., "audio/wav" or "audio/mp3").
 >
 > For **STT** via http/https: The audio data is automatically converted to the appropriate format and encoded as base64. The `conversation_id` field is included when the STT request is part of a voice pipeline run, allowing you to correlate STT requests with their corresponding conversation webhook calls. The webhook should return a JSON response with the transcribed text in the configured output field (default: "output").
 >
@@ -419,7 +420,7 @@ When adding a TTS subentry, you can configure:
 
 - **Webhook URL**: The endpoint that will handle TTS synthesis requests
 - **Supported Languages**: List of language codes your TTS service supports (e.g., "en-US", "de-DE", "fr-FR")
-- **Voices**: Optional list of available voice names for different speaking styles
+- **Voice**: The voice to use, selected from a dropdown fetched from the backend's `GET /api/tts/voices` endpoint. Each TTS subentry can use a different voice — add multiple TTS subentries to use different voices in different voice pipelines.
 - **Timeout**: How long to wait for audio generation (default: 30 seconds)
 - **Authentication**: HTTP basic authentication for securing your webhook
 

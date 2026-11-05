@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
-from typing import Any, cast
+from typing import Any
 
 import aiohttp
 from homeassistant.components.tts import (
@@ -20,7 +20,13 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from propcache.api import cached_property
 
-from .const import CONF_SUPPORTED_LANGUAGES, CONF_TIMEOUT, CONF_VOICES, DEFAULT_TIMEOUT
+from .const import (
+    CONF_SUPPORTED_LANGUAGES,
+    CONF_TIMEOUT,
+    CONF_VOICE,
+    CONF_VOICES,
+    DEFAULT_TIMEOUT,
+)
 from .entity import WebhookConversationBaseEntity
 from .models import WebhookTTSRequestPayload
 
@@ -65,9 +71,16 @@ class WebhookConversationTextToSpeechEntity(
         self._attr_supported_languages = supported_languages
         self._attr_default_language = supported_languages[0]
 
-        if voices := subentry.data.get(CONF_VOICES):
+        # Neue Subentries speichern genau eine voice_id; alte Konfigurationen
+        # mit Freitext-Liste (CONF_VOICES) werden weiterhin unterstützt.
+        voice_id: str | None = subentry.data.get(CONF_VOICE)
+        if voice_id is None and (legacy := subentry.data.get(CONF_VOICES)):
+            voice_id = legacy[0] if isinstance(legacy, list) else str(legacy)
+
+        self._voice_id = voice_id
+        if voice_id:
             self._attr_supported_options = [ATTR_VOICE]
-            self._voices = [Voice(voice, voice) for voice in cast(list[str], voices)]
+            self._voices = [Voice(voice_id, voice_id)]
 
     @callback
     def async_get_supported_voices(self, language: str) -> list[Voice] | None:
@@ -98,10 +111,10 @@ class WebhookConversationTextToSpeechEntity(
             "language": language,
         }
 
-        if voice := options.get(ATTR_VOICE):
-            payload["voice"] = (
-                voice.voice_id if isinstance(voice, Voice) else str(voice)
-            )
+        # Die Stimmen-ID wird direkt an das Backend gesendet; dieses mapped
+        # sie harte auf Vendor, Modell und Provider-Stimme.
+        if self._voice_id:
+            payload["voice_id"] = self._voice_id
 
         async with session.post(
             self._webhook_url,
