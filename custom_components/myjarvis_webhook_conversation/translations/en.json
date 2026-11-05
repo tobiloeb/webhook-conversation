@@ -84,12 +84,20 @@
             "webhook_url": "Webhook URL",
             "timeout": "Request timeout (seconds)",
             "auth_type": "Authentication type",
-            "supported_languages": "Supported languages",
+            "supported_languages": "Supported languages"
+          },
+          "data_description": {
+            "supported_languages": "Enter language codes (e.g., en-US, de-DE, fr-FR)."
+          }
+        },
+        "select_voice": {
+          "title": "Select voice",
+          "description": "Choose the voice from the backend catalog. Each TTS configuration can use a different voice — add multiple TTS entries to use different voices in different voice pipelines.",
+          "data": {
             "voice": "Voice"
           },
           "data_description": {
-            "supported_languages": "Enter language codes (e.g., en-US, de-DE, fr-FR).",
-            "voice": "Choose the voice from the backend catalog. Each TTS configuration can use a different voice."
+            "voice": "Provider and voice name are provided by the backend (GET /api/tts/voices)."
           }
         },
         "auth": {
@@ -107,11 +115,11 @@
         "invalid_language_code": "One or more language codes are invalid. Please use valid language codes like en-US, de-DE, fr-FR.",
         "no_languages_specified": "At least one language must be specified.",
         "voice_required": "Please select a voice.",
-        "voices_fetch_failed": "Could not load the voice list from the backend. Check the webhook URL and try again.",
         "unknown": "Unexpected error occurred"
       },
       "abort": {
         "entry_not_loaded": "Cannot add things while the configuration is disabled.",
+        "voices_fetch_failed": "Could not load the voice list from the backend. Check the webhook URL and try again.",
         "reconfigure_successful": "Reconfiguration successful"
       }
     },
