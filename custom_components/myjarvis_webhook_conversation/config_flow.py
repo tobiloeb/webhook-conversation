@@ -19,10 +19,10 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
+    SelectOptionDict,
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
-    SelectSelectorOptionDict,
     TemplateSelector,
     TextSelector,
     TextSelectorConfig,
@@ -72,7 +72,7 @@ def _voices_endpoint_url(webhook_url: str) -> str:
 
 async def _fetch_voice_options(
     hass: HomeAssistant, webhook_url: str
-) -> list[SelectSelectorOptionDict]:
+) -> list[SelectOptionDict]:
     """Lädt den Stimmen-Katalog für das Dropdown aus dem Backend."""
     session = async_get_clientsession(hass)
     url = _voices_endpoint_url(webhook_url)
@@ -87,7 +87,7 @@ async def _fetch_voice_options(
         raise HomeAssistantError(f"Failed to fetch voices from {url}: {exc}") from exc
 
     return [
-        SelectSelectorOptionDict({"value": voice["id"], "label": voice["label"]})
+        SelectOptionDict({"value": voice["id"], "label": voice["label"]})
         for voice in payload
     ]
 
@@ -97,7 +97,7 @@ def _get_subentry_schema(
     options: dict[str, Any] | None = None,
     is_new: bool = True,
     hass: HomeAssistant | None = None,
-    voice_options: list[SelectSelectorOptionDict] | None = None,
+    voice_options: list[SelectOptionDict] | None = None,
 ) -> vol.Schema:
     """Return the subentry configuration schema."""
     if options is None:
@@ -311,7 +311,7 @@ class WebhookSubentryFlowHandler(ConfigSubentryFlow):
     ) -> SubentryFlowResult:
         """Set subentry options."""
         errors: dict[str, str] = {}
-        voice_options: list[SelectSelectorOptionDict] = []
+        voice_options: list[SelectOptionDict] = []
 
         if user_input is None:
             if self._is_new:
@@ -402,7 +402,7 @@ class WebhookSubentryFlowHandler(ConfigSubentryFlow):
         self,
         options: dict[str, Any],
         errors: dict[str, str],
-        voice_options: list[SelectSelectorOptionDict] | None = None,
+        voice_options: list[SelectOptionDict] | None = None,
     ) -> SubentryFlowResult:
         """Show the options form, loading the voice catalog when needed."""
         if self._subentry_type == "tts" and voice_options is None:
