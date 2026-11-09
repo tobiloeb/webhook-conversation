@@ -66,6 +66,9 @@ class WebhookConversationPayload(TypedDict):
     user_id: NotRequired[str | None]
     user_name: NotRequired[str | None]
     area: NotRequired[str | None]
+    # Profil-ID aus der Conversation-Konfiguration (my-jarvis lädt dann
+    # den passenden System-Prompt). Nicht gesetzt = bisheriges Verhalten.
+    profile: NotRequired[str]
 
     # task fields
     binary_objects: NotRequired[list[WebhookConversationBinaryObject]]

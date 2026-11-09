@@ -151,6 +151,7 @@ class WebhookConversationEntity(
         payload["exposed_entities"] = self._get_home_structure_with_exposed_entities()
         payload["area"] = self._get_current_area(user_input.as_llm_context(DOMAIN))
         payload["language"] = user_input.language
+        payload["profile"] = self._profile
         user = (
             await self.hass.auth.async_get_user(user_input.context.user_id)
             if user_input.context.user_id
@@ -205,6 +206,7 @@ class WebhookConversationEntity(
             payload["language"] = user_input.language
             payload["user_id"] = user_input.context.user_id
             payload["user_name"] = user.name if user else None
+            payload["profile"] = self._profile
         else:
             raise HomeAssistantError(
                 f"Webhook tool call loop exceeded {MAX_TOOL_ITERATIONS} iterations"

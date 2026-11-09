@@ -22,6 +22,7 @@ from .const import (
     CONF_ENABLE_STREAMING,
     CONF_OUTPUT_FIELD,
     CONF_PASSWORD,
+    CONF_PROFILE,
     CONF_PROMPT,
     CONF_TIMEOUT,
     CONF_USERNAME,
@@ -29,6 +30,8 @@ from .const import (
     DEFAULT_AUTH_TYPE,
     DEFAULT_ENABLE_STREAMING,
     DEFAULT_OUTPUT_FIELD,
+    DEFAULT_PROFILE,
+    DEFAULT_PROMPT,
     DEFAULT_TIMEOUT,
     DOMAIN,
     MANUFACTURER,
@@ -90,7 +93,8 @@ class WebhookConversationLLMBaseEntity(WebhookConversationBaseEntity):
     def __init__(self, config_entry: ConfigEntry, subentry: ConfigSubentry) -> None:
         """Initialize LLM-specific properties."""
         super().__init__(config_entry, subentry)
-        self._system_prompt = subentry.data[CONF_PROMPT]
+        self._system_prompt = subentry.data.get(CONF_PROMPT, DEFAULT_PROMPT)
+        self._profile: str = subentry.data.get(CONF_PROFILE, DEFAULT_PROFILE)
         self._streaming_enabled: bool = subentry.data.get(
             CONF_ENABLE_STREAMING, DEFAULT_ENABLE_STREAMING
         )

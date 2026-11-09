@@ -23,7 +23,6 @@ from homeassistant.helpers.selector import (
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
-    TemplateSelector,
     TextSelector,
     TextSelectorConfig,
 )
@@ -35,7 +34,7 @@ from .const import (
     CONF_NAME,
     CONF_OUTPUT_FIELD,
     CONF_PASSWORD,
-    CONF_PROMPT,
+    CONF_PROFILE,
     CONF_SUPPORTED_LANGUAGES,
     CONF_TIMEOUT,
     CONF_USERNAME,
@@ -47,7 +46,7 @@ from .const import (
     DEFAULT_CONVERSATION_NAME,
     DEFAULT_ENABLE_STREAMING,
     DEFAULT_OUTPUT_FIELD,
-    DEFAULT_PROMPT,
+    DEFAULT_PROFILE,
     DEFAULT_STT_NAME,
     DEFAULT_SUPPORTED_LANGUAGES,
     DEFAULT_TIMEOUT,
@@ -68,6 +67,34 @@ def _voices_endpoint_url(webhook_url: str) -> str:
     """Leitet die Voices-URL aus der konfigurierten TTS-Webhook-URL ab."""
     base = webhook_url.removesuffix("/").removesuffix("/api/tts")
     return f"{base}/api/tts/voices"
+
+
+def _profiles_endpoint_url(webhook_url: str) -> str:
+    """Leitet die Profile-URL aus der konfigurierten Webhook-URL ab."""
+    base = webhook_url.removesuffix("/").removesuffix("/api/agent/prompt")
+    return f"{base}/api/profiles"
+
+
+async def _fetch_profile_options(
+    hass: HomeAssistant, webhook_url: str
+) -> list[SelectOptionDict]:
+    """Lädt den Profil-Katalog für das Dropdown aus dem Backend."""
+    session = async_get_clientsession(hass)
+    url = _profiles_endpoint_url(webhook_url)
+    try:
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+            if resp.status != 200:
+                raise HomeAssistantError(
+                    f"HTTP {resp.status} fetching profiles from {url}"
+                )
+            payload = cast(list[dict[str, Any]], await resp.json())
+    except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
+        raise HomeAssistantError(f"Failed to fetch profiles from {url}: {exc}") from exc
+
+    return [
+        SelectOptionDict({"value": profile["id"], "label": profile["label"]})
+        for profile in payload
+    ]
 
 
 async def _fetch_voice_options(
@@ -159,13 +186,6 @@ def _get_subentry_schema(
                     },
                     default=DEFAULT_OUTPUT_FIELD,
                 ): str,
-                vol.Optional(
-                    CONF_PROMPT,
-                    description={
-                        "suggested_value": options.get(CONF_PROMPT, DEFAULT_PROMPT)
-                    },
-                    default=DEFAULT_PROMPT,
-                ): TemplateSelector(),
                 vol.Optional(
                     CONF_ENABLE_STREAMING,
                     description={
@@ -361,6 +381,11 @@ class WebhookSubentryFlowHandler(ConfigSubentryFlow):
         if self._subentry_type == "tts":
             return await self.async_step_select_voice()
 
+        # Bei conversations wird das Profil im zweiten Schritt gewählt
+        # (gleiches Muster wie die Stimme bei TTS).
+        if self._subentry_type == "conversation":
+            return await self.async_step_select_profile()
+
         return await self._finish(user_input)
 
     async def async_step_select_voice(
@@ -405,6 +430,44 @@ class WebhookSubentryFlowHandler(ConfigSubentryFlow):
         )
         return self.async_show_form(
             step_id="select_voice", data_schema=schema, errors=errors
+        )
+
+    async def async_step_select_profile(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Zweiter Conversation-Schritt: Profil aus dem Backend-Katalog wählen."""
+        errors: dict[str, str] = {}
+
+        try:
+            profile_options = await _fetch_profile_options(
+                self.hass, self._user_input[CONF_WEBHOOK_URL]
+            )
+        except HomeAssistantError:
+            _LOGGER.exception("Failed to load profile catalog")
+            return self.async_abort(reason="profiles_fetch_failed")
+
+        selected_profile = self._user_input.get(CONF_PROFILE, DEFAULT_PROFILE)
+
+        if user_input is not None:
+            selected_profile = user_input.get(CONF_PROFILE) or DEFAULT_PROFILE
+            return await self._finish({**self._user_input, **user_input})
+
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_PROFILE,
+                    description={"suggested_value": selected_profile},
+                    default=selected_profile,
+                ): SelectSelector(
+                    SelectSelectorConfig(
+                        options=profile_options,
+                        mode=SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+            }
+        )
+        return self.async_show_form(
+            step_id="select_profile", data_schema=schema, errors=errors
         )
 
     async def _finish(self, user_input: dict[str, Any]) -> SubentryFlowResult:
