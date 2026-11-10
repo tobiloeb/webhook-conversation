@@ -1,22 +1,17 @@
 """Conversation platform for webhook conversation integration."""
 
-from collections import defaultdict
 import json
 import logging
+import time
+from collections import defaultdict
 from collections.abc import AsyncIterator
-from operator import attrgetter
-from typing import Any, Literal
 from decimal import Decimal
 from enum import Enum
-import time
-
-from voluptuous import extra
-
+from operator import attrgetter
+from typing import Any, Literal
 
 from homeassistant.components import conversation
-from homeassistant.components.calendar import DOMAIN as CALENDAR_DOMAIN
 from homeassistant.components.homeassistant.exposed_entities import async_should_expose
-from homeassistant.components.script import DOMAIN as SCRIPT_DOMAIN
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.const import MATCH_ALL
 from homeassistant.core import HomeAssistant
@@ -30,18 +25,15 @@ from homeassistant.helpers import (
 from homeassistant.helpers import (
     entity_registry as er,
 )
-from homeassistant.helpers import floor_registry as fr, llm
+from homeassistant.helpers import floor_registry as fr
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util import dt as dt_util
-from homeassistant.util import yaml as yaml_util
 
 from .const import CONF_OUTPUT_FIELD, DEFAULT_OUTPUT_FIELD, DOMAIN
 from .entity import WebhookConversationLLMBaseEntity
 from .models import WebhookConversationPayload
 
 _LOGGER = logging.getLogger(__name__)
-
-MAX_TOOL_ITERATIONS = 10
 
 
 async def async_setup_entry(
@@ -103,7 +95,7 @@ class WebhookConversationEntity(
             await chat_log.async_provide_llm_data(
                 user_input.as_llm_context(DOMAIN),
                 user_llm_hass_api=None,
-                user_llm_prompt=self._system_prompt,
+                user_llm_prompt=None,
                 user_extra_system_prompt=user_input.extra_system_prompt,
             )
         except conversation.ConverseError as err:
@@ -164,53 +156,25 @@ class WebhookConversationEntity(
             CONF_OUTPUT_FIELD, DEFAULT_OUTPUT_FIELD
         )
 
-        for _iteration in range(MAX_TOOL_ITERATIONS):
-            if self._streaming_enabled:
-                async for _ in chat_log.async_add_delta_content_stream(
-                    self.entity_id,
-                    self._transform_webhook_stream(payload),
-                ):
-                    pass
-            else:
-                result = await self._send_payload(payload, allow_tool_only=True)
-                reply = result.get(output_field)
-                tool_calls = _parse_tool_calls(result.get("tool_calls"))
-                async for _ in chat_log.async_add_assistant_content(
-                    conversation.AssistantContent(
-                        agent_id=self.entity_id,
-                        content=reply,
-                        tool_calls=tool_calls or None,
-                    )
-                ):
-                    pass
-
-            if not chat_log.unresponded_tool_results:
-                break
-
-            payload = self._build_payload(chat_log, include_last=True)
-            payload["query"] = user_messages[-1]["content"]
-            payload["agent_id"] = user_input.agent_id
-            payload["device_id"] = user_input.device_id
-            payload["device_info"] = (
-                (
-                    device.dict_repr
-                    if (device := device_registry.async_get(user_input.device_id))
-                    else None
-                )
-                if user_input.device_id
-                else None
-            )
-            payload["exposed_entities"] = json.dumps(
-                self._get_exposed_entities(), default=set_default
-            )
-            payload["language"] = user_input.language
-            payload["user_id"] = user_input.context.user_id
-            payload["user_name"] = user.name if user else None
-            payload["profile"] = self._profile
+        # Remote-Tool-Loop bewusst entfernt (Review S1): HA-Steuerung läuft
+        # ausschließlich über die MCP-Tools des Backends. Tool-Calls in der
+        # Webhook-Antwort werden nicht mehr ausgeführt.
+        if self._streaming_enabled:
+            async for _ in chat_log.async_add_delta_content_stream(
+                self.entity_id,
+                self._transform_webhook_stream(payload),
+            ):
+                pass
         else:
-            raise HomeAssistantError(
-                f"Webhook tool call loop exceeded {MAX_TOOL_ITERATIONS} iterations"
-            )
+            result = await self._send_payload(payload)
+            reply = result.get(output_field)
+            async for _ in chat_log.async_add_assistant_content(
+                conversation.AssistantContent(
+                    agent_id=self.entity_id,
+                    content=reply,
+                )
+            ):
+                pass
 
     async def _transform_webhook_stream(
         self, payload: WebhookConversationPayload
@@ -222,10 +186,12 @@ class WebhookConversationEntity(
             _LOGGER.debug("Webhook streaming response: %s", chunk_data)
             if chunk_data.get("type") == "item" and "content" in chunk_data:
                 yield {"content": chunk_data["content"]}
-            elif chunk_data.get("type") == "tool_calls" and "tool_calls" in chunk_data:
-                tool_calls = _parse_tool_calls(chunk_data["tool_calls"])
-                if tool_calls:
-                    yield {"tool_calls": tool_calls}
+            elif chunk_data.get("type") == "tool_calls":
+                # Tool-Calls werden nicht mehr an HA zurückgespielt (Review S1).
+                _LOGGER.warning(
+                    "Ignoring tool_calls in webhook response; HA tool execution "
+                    "via webhook is disabled (use the backend MCP tools instead)"
+                )
 
     def _get_exposed_entities(self) -> list[dict[str, Any]]:
         states = [
@@ -313,17 +279,8 @@ class WebhookConversationEntity(
             "media_title",
         }
 
-        data: dict[str, dict[str, Any]] = {
-            CALENDAR_DOMAIN: {},
-        }
-
-        ignored: dict[str, dict[str, Any]] = {
-            SCRIPT_DOMAIN: {},
-        }
-
         floors_dict: dict[str, dict[str, Any]] = {}
         rooms_dict: dict[str, dict[str, Any]] = {}
-
         # Hilfsstruktur: floors[floor_id][area_id] -> list[devices]
         floors_devices: dict[str, dict[str, list[dict[str, Any]]]] = defaultdict(
             lambda: defaultdict(list)
@@ -466,20 +423,3 @@ class WebhookConversationEntity(
             time.perf_counter() - start,
         )
         return json_output
-
-
-def _parse_tool_calls(
-    raw_tool_calls: list[dict[str, Any]] | None,
-) -> list[llm.ToolInput] | None:
-    """Parse tool calls from webhook response into ToolInput objects."""
-    if not raw_tool_calls:
-        return None
-    return [
-        llm.ToolInput(
-            tool_name=tool_call["name"],
-            tool_args=tool_call.get("arguments", {}),
-            id=tool_call.get("id", ""),
-        )
-        for tool_call in raw_tool_calls
-        if "name" in tool_call
-    ] or None

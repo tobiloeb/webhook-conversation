@@ -23,9 +23,9 @@ Dort implementieren `src/jarvis_agent/server.py` die Ziel-Endpoints `/ws/audio` 
 ## Die drei Webhook-Endpoints (Client-Seite)
 
 ### 1. Conversation / LLM-Agent (`conversation.py`)
-- POST JSON `WebhookConversationPayload` mit `query`, `messages`, `system_prompt`, `exposed_entities` (Haus-Struktur inkl. Aliases), `area`, `language`, `device_info`.
-- Antwort: JSON mit Feld `output_field` (Default `"output"`) — oder Streaming als JSON-Lines mit `{"type":"item","content":...}`; optional `tool_calls`.
-- Tool-Calls erzeugen einen Rücklauf-Loop (max. `MAX_TOOL_ITERATIONS` = 10).
+- POST JSON `WebhookConversationPayload` mit `query`, `messages`, `exposed_entities` (Haus-Struktur inkl. Aliases), `area`, `language`, `device_info`, `profile`. Der System-Prompt wird ausschließlich aus dem Backend-Profil geladen (kein `system_prompt`-Feld mehr im Payload).
+- Antwort: JSON mit Feld `output_field` (Default `"output"`) — oder Streaming als JSON-Lines mit `{"type":"item","content":...}`.
+- Tool-Calls in der Webhook-Antwort werden **ignoriert** (Review S1): HA-Aktionen laufen ausschließlich über die MCP-Tools des my-jarvis-Backends; ein Rücklauf-Loop existiert nicht mehr.
 
 ### 2. STT (`stt.py`)
 - HTTP: POST `WebhookSTTRequestPayload` mit base64-Audio (`binary_objects`-Schema).

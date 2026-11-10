@@ -167,7 +167,7 @@ This example workflow includes:
       "area_name": "Living Room"
     }
   ],
-  "system_prompt": "optional additional system instructions",
+  "profile": "default",
   "stream": false
 }
 ```
@@ -185,7 +185,7 @@ This example workflow includes:
   ],
   "query": "task instructions",
   "task_name": "task name",
-  "system_prompt": "optional additional system instructions",
+  "profile": "default",
   "structure": "json schema for output",
   "binary_objects": [
     {
@@ -214,9 +214,9 @@ This example workflow includes:
 ```
 
 > [!NOTE]
-> For **conversations**: The `device_id` and `device_info` fields are only set when the conversation was initiated via a voice satellite. The `language` field contains the language code (e.g., "de-DE") configured for the conversation. The `agent_id` field contains the entity ID of the conversation agent.
+> For **conversations**: The `device_id` and `device_info` fields are only set when the conversation was initiated via a voice satellite. The `language` field contains the language code (e.g., "de-DE") configured for the conversation. The `agent_id` field contains the entity ID of the conversation agent. The `profile` field contains the conversation profile ID selected in the configuration (e.g. "default", "mathea"); the system prompt is loaded from the backend profile — there is no `system_prompt` field in the payload anymore.
 >
-> For **AI tasks**: The `binary_objects` field is only included when attachments are present in the AI task. The `structure` field is only included when a JSON schema is provided by the action call. The `task_name` field is only included for AI tasks when provided by the action call. Each attachment is converted to base64 format and includes metadata such as filename, file path, and MIME type.
+> For **AI tasks**: The `binary_objects` field is only included when attachments are present in the AI task. The `structure` field is only included when a JSON schema is provided by the action call. The `task_name` field is only included for AI tasks when provided by the action call. Each attachment is converted to base64 format and includes metadata such as filename, file path, and MIME type. The `profile` field is sent here as well and determines the system prompt used for the task.
 >
 > For **TTS**: The `voice_id` field contains the selected voice identifier from the backend catalog (see `GET /api/tts/voices`) and is always sent. The legacy `voice` field is only sent by older configurations. The webhook should return audio data with an appropriate Content-Type header (e.g., "audio/wav" or "audio/mp3").
 >

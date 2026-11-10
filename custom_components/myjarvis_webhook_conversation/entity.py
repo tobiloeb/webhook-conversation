@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import base64
-from collections.abc import AsyncGenerator
 import json
 import logging
+from collections.abc import AsyncGenerator
 from typing import Any
 
 import aiohttp
-
 from homeassistant.components import conversation
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.exceptions import HomeAssistantError
@@ -23,7 +22,6 @@ from .const import (
     CONF_OUTPUT_FIELD,
     CONF_PASSWORD,
     CONF_PROFILE,
-    CONF_PROMPT,
     CONF_TIMEOUT,
     CONF_USERNAME,
     CONF_WEBHOOK_URL,
@@ -31,7 +29,6 @@ from .const import (
     DEFAULT_ENABLE_STREAMING,
     DEFAULT_OUTPUT_FIELD,
     DEFAULT_PROFILE,
-    DEFAULT_PROMPT,
     DEFAULT_TIMEOUT,
     DOMAIN,
     MANUFACTURER,
@@ -93,7 +90,9 @@ class WebhookConversationLLMBaseEntity(WebhookConversationBaseEntity):
     def __init__(self, config_entry: ConfigEntry, subentry: ConfigSubentry) -> None:
         """Initialize LLM-specific properties."""
         super().__init__(config_entry, subentry)
-        self._system_prompt = subentry.data.get(CONF_PROMPT, DEFAULT_PROMPT)
+        # Profil-ID; der System-Prompt wird ausschließlich im Backend-Profil
+        # gepflegt (siehe my-jarvis resources/profiles/). Ohne gespeicherte
+        # ID gilt "default".
         self._profile: str = subentry.data.get(CONF_PROFILE, DEFAULT_PROFILE)
         self._streaming_enabled: bool = subentry.data.get(
             CONF_ENABLE_STREAMING, DEFAULT_ENABLE_STREAMING
@@ -102,7 +101,6 @@ class WebhookConversationLLMBaseEntity(WebhookConversationBaseEntity):
     async def _send_payload(
         self,
         payload: WebhookConversationPayload,
-        allow_tool_only: bool = False,
     ) -> dict[str, Any]:
         """Send the payload to the webhook."""
         _LOGGER.debug(
@@ -130,10 +128,7 @@ class WebhookConversationLLMBaseEntity(WebhookConversationBaseEntity):
         output_field: str = self._subentry.data.get(
             CONF_OUTPUT_FIELD, DEFAULT_OUTPUT_FIELD
         )
-        if not isinstance(result, dict) or (
-            output_field not in result
-            and not (allow_tool_only and "tool_calls" in result)
-        ):
+        if not isinstance(result, dict) or output_field not in result:
             raise HomeAssistantError(f"Invalid webhook response: {result}")
 
         _LOGGER.debug("Webhook response: %s", result)
@@ -183,24 +178,17 @@ class WebhookConversationLLMBaseEntity(WebhookConversationBaseEntity):
                             continue
 
     def _build_payload(
-        self, chat_log: conversation.ChatLog, include_last: bool = False
+        self, chat_log: conversation.ChatLog
     ) -> WebhookConversationPayload:
         """Create a base payload from the chat log for webhook calls."""
-        system_message = chat_log.content[0]
-        if not isinstance(system_message, conversation.SystemContent):
-            raise TypeError("First message must be a system message")
-
-        end_idx = len(chat_log.content) if include_last else -1
         messages = [
             self._convert_content_to_param(content)
-            for content in chat_log.content[1:end_idx]
+            for content in chat_log.content[1:-1]
         ]
-
         return WebhookConversationPayload(
             {
                 "messages": messages,
                 "conversation_id": chat_log.conversation_id,
-                "system_prompt": system_message.content,
                 "stream": self._streaming_enabled,
                 "query": "",
             }

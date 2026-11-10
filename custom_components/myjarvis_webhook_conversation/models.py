@@ -54,7 +54,6 @@ class WebhookConversationPayload(TypedDict):
     conversation_id: str
     messages: list[WebhookConversationMessage]
     query: str
-    system_prompt: str
     stream: bool
 
     # conversation fields
@@ -66,8 +65,8 @@ class WebhookConversationPayload(TypedDict):
     user_id: NotRequired[str | None]
     user_name: NotRequired[str | None]
     area: NotRequired[str | None]
-    # Profil-ID aus der Conversation-Konfiguration (my-jarvis lädt dann
-    # den passenden System-Prompt). Nicht gesetzt = bisheriges Verhalten.
+    # Profil-ID aus der Conversation-Konfiguration; der System-Prompt wird
+    # ausschließlich aus dem Backend-Profil geladen (kein Prompt-Feld mehr).
     profile: NotRequired[str]
 
     # task fields

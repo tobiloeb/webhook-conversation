@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import logging
 from typing import Any, cast
+from urllib.parse import urlparse, urlunparse
 
 import aiohttp
 import voluptuous as vol
-
 from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
@@ -65,24 +65,43 @@ _LOGGER = logging.getLogger(__name__)
 
 def _voices_endpoint_url(webhook_url: str) -> str:
     """Leitet die Voices-URL aus der konfigurierten TTS-Webhook-URL ab."""
-    base = webhook_url.removesuffix("/").removesuffix("/api/tts")
-    return f"{base}/api/tts/voices"
+    return _endpoint_url(webhook_url, "/api/tts", "/api/tts/voices")
 
 
 def _profiles_endpoint_url(webhook_url: str) -> str:
-    """Leitet die Profile-URL aus der konfigurierten Webhook-URL ab."""
-    base = webhook_url.removesuffix("/").removesuffix("/api/agent/prompt")
-    return f"{base}/api/profiles"
+    """Leitet die Profil-URL aus der konfigurierten Webhook-URL ab."""
+    return _endpoint_url(webhook_url, "/api/agent/prompt", "/api/profiles")
+
+
+def _endpoint_url(webhook_url: str, stripped_suffix: str, endpoint: str) -> str:
+    """
+    Leitet einen Sibling-Endpunkt aus einer Webhook-URL ab.
+
+    Entfernt optional den bekannten Endpunkt-Pfad (z. B. ``/api/agent/prompt``)
+    und hängt den Ziel-Endpunkt an. Query/Fragment werden verworfen, Pfade
+    mit oder ohne trailing slash werden korrekt behandelt.
+    """
+    parsed = urlparse(webhook_url)
+    base_path = parsed.path.rstrip("/")
+    base_path = base_path.removesuffix(stripped_suffix)
+    url = urlunparse(
+        parsed._replace(path=f"{base_path}{endpoint}", query="", fragment="")
+    )
+    return url
 
 
 async def _fetch_profile_options(
-    hass: HomeAssistant, webhook_url: str
+    hass: HomeAssistant,
+    webhook_url: str,
+    auth: aiohttp.BasicAuth | None = None,
 ) -> list[SelectOptionDict]:
     """Lädt den Profil-Katalog für das Dropdown aus dem Backend."""
     session = async_get_clientsession(hass)
     url = _profiles_endpoint_url(webhook_url)
     try:
-        async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+        async with session.get(
+            url, auth=auth, timeout=aiohttp.ClientTimeout(total=10)
+        ) as resp:
             if resp.status != 200:
                 raise HomeAssistantError(
                     f"HTTP {resp.status} fetching profiles from {url}"
@@ -98,13 +117,17 @@ async def _fetch_profile_options(
 
 
 async def _fetch_voice_options(
-    hass: HomeAssistant, webhook_url: str
+    hass: HomeAssistant,
+    webhook_url: str,
+    auth: aiohttp.BasicAuth | None = None,
 ) -> list[SelectOptionDict]:
     """Lädt den Stimmen-Katalog für das Dropdown aus dem Backend."""
     session = async_get_clientsession(hass)
     url = _voices_endpoint_url(webhook_url)
     try:
-        async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+        async with session.get(
+            url, auth=auth, timeout=aiohttp.ClientTimeout(total=10)
+        ) as resp:
             if resp.status != 200:
                 raise HomeAssistantError(
                     f"HTTP {resp.status} fetching voices from {url}"
@@ -113,10 +136,24 @@ async def _fetch_voice_options(
     except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
         raise HomeAssistantError(f"Failed to fetch voices from {url}: {exc}") from exc
 
-    return [
-        SelectOptionDict({"value": voice["id"], "label": voice["label"]})
-        for voice in payload
-    ]
+    try:
+        return [
+            SelectOptionDict({"value": voice["id"], "label": voice["label"]})
+            for voice in payload
+        ]
+    except (TypeError, KeyError) as exc:
+        raise HomeAssistantError(f"Invalid voices response from {url}: {exc}") from exc
+
+
+def _auth_from_options(options: dict[str, Any]) -> aiohttp.BasicAuth | None:
+    """Baut optionale Basic-Auth für Katalog-Abfragen aus den Flow-Daten."""
+    if options.get(CONF_AUTH_TYPE) != AuthType.BASIC:
+        return None
+    username = str(options.get(CONF_USERNAME, "")).strip()
+    password = str(options.get(CONF_PASSWORD, "")).strip()
+    if username and password:
+        return aiohttp.BasicAuth(username, password)
+    return None
 
 
 def _get_subentry_schema(
@@ -342,10 +379,8 @@ class WebhookSubentryFlowHandler(ConfigSubentryFlow):
         )
 
         webhook_url: str = user_input[CONF_WEBHOOK_URL]
-        valid_http = webhook_url.startswith("http://") or webhook_url.startswith(
-            "https://"
-        )
-        valid_ws = webhook_url.startswith("ws://") or webhook_url.startswith("wss://")
+        valid_http = webhook_url.startswith(("http://", "https://"))
+        valid_ws = webhook_url.startswith(("ws://", "wss://"))
         if not valid_http and not (self._subentry_type == "stt" and valid_ws):
             _LOGGER.error("Invalid webhook URL: %s", webhook_url)
             errors["base"] = "invalid_webhook_url"
@@ -376,6 +411,20 @@ class WebhookSubentryFlowHandler(ConfigSubentryFlow):
 
         self._user_input = user_input
 
+        # Auth zuerst: die Katalog-Abfragen (Stimmen/Profile) brauchen
+        # ggf. die Credentials.
+        auth_type = user_input.get(CONF_AUTH_TYPE, DEFAULT_AUTH_TYPE)
+        if auth_type == AuthType.BASIC:
+            return await self.async_step_auth()
+
+        return await self._async_step_catalog(user_input)
+
+    async def _async_step_catalog(
+        self, user_input: dict[str, Any]
+    ) -> SubentryFlowResult:
+        """Nach dem Auth-Schritt: Katalog-Auswahl bzw. direkter Abschluss."""
+        self._user_input = user_input
+
         # Bei TTS wird die Stimme im zweiten Schritt gewählt; dort ist die
         # Webhook-URL bekannt und der Katalog kann geladen werden.
         if self._subentry_type == "tts":
@@ -396,7 +445,9 @@ class WebhookSubentryFlowHandler(ConfigSubentryFlow):
 
         try:
             voice_options = await _fetch_voice_options(
-                self.hass, self._user_input[CONF_WEBHOOK_URL]
+                self.hass,
+                self._user_input[CONF_WEBHOOK_URL],
+                auth=_auth_from_options(self._user_input),
             )
         except HomeAssistantError:
             _LOGGER.exception("Failed to load voice catalog")
@@ -437,20 +488,45 @@ class WebhookSubentryFlowHandler(ConfigSubentryFlow):
     ) -> SubentryFlowResult:
         """Zweiter Conversation-Schritt: Profil aus dem Backend-Katalog wählen."""
         errors: dict[str, str] = {}
+        has_previous_profile = CONF_PROFILE in self._user_input
 
         try:
             profile_options = await _fetch_profile_options(
-                self.hass, self._user_input[CONF_WEBHOOK_URL]
+                self.hass,
+                self._user_input[CONF_WEBHOOK_URL],
+                auth=_auth_from_options(self._user_input),
             )
         except HomeAssistantError:
             _LOGGER.exception("Failed to load profile catalog")
-            return self.async_abort(reason="profiles_fetch_failed")
+            if has_previous_profile and user_input is None:
+                # Reconfigure: mit dem bisherigen Profil weitermachen, statt
+                # an einem Backend-Ausfall zu scheitern (das Profil wird
+                # beim nächsten Reconfigure neu gewählt).
+                return await self._finish({})
+            errors["base"] = "profiles_fetch_failed"
+            return self.async_show_form(
+                step_id="select_profile",
+                data_schema=vol.Schema(
+                    {
+                        vol.Required(
+                            CONF_PROFILE,
+                            description={
+                                "suggested_value": self._user_input.get(
+                                    CONF_PROFILE, DEFAULT_PROFILE
+                                )
+                            },
+                            default=self._user_input.get(CONF_PROFILE, DEFAULT_PROFILE),
+                        ): str
+                    }
+                ),
+                errors=errors,
+            )
 
         selected_profile = self._user_input.get(CONF_PROFILE, DEFAULT_PROFILE)
 
         if user_input is not None:
             selected_profile = user_input.get(CONF_PROFILE) or DEFAULT_PROFILE
-            return await self._finish({**self._user_input, **user_input})
+            return await self._finish({**self._user_input, CONF_PROFILE: selected_profile})
 
         schema = vol.Schema(
             {
@@ -471,12 +547,8 @@ class WebhookSubentryFlowHandler(ConfigSubentryFlow):
         )
 
     async def _finish(self, user_input: dict[str, Any]) -> SubentryFlowResult:
-        """Subentry anlegen bzw. aktualisieren (inkl. optionalem Auth-Schritt)."""
+        """Subentry anlegen bzw. aktualisieren (Auth wurde zuvor abgefragt)."""
         self._user_input = user_input
-
-        auth_type = user_input.get(CONF_AUTH_TYPE, DEFAULT_AUTH_TYPE)
-        if auth_type == AuthType.BASIC:
-            return await self.async_step_auth()
 
         if self._is_new:
             return self.async_create_entry(
@@ -508,8 +580,6 @@ class WebhookSubentryFlowHandler(ConfigSubentryFlow):
                 step_id="auth", data_schema=_get_auth_schema(current_auth_data)
             )
 
-        _LOGGER.debug("Processing authentication configuration")
-
         username = user_input.get(CONF_USERNAME, "").strip()
         password = user_input.get(CONF_PASSWORD, "").strip()
 
@@ -520,16 +590,7 @@ class WebhookSubentryFlowHandler(ConfigSubentryFlow):
                 errors={"base": "invalid_auth"},
             )
 
-        config_data = {**self._user_input, **user_input}
+        _LOGGER.debug("Processing authentication configuration")
 
-        if self._is_new:
-            return self.async_create_entry(
-                title=config_data.pop(CONF_NAME),
-                data=config_data,
-            )
-
-        return self.async_update_and_abort(
-            self._get_entry(),
-            self._get_reconfigure_subentry(),
-            data=config_data,
-        )
+        # Mit Credentials weiter zum Katalog-Schritt (Stimmen/Profile).
+        return await self._async_step_catalog({**self._user_input, **user_input})

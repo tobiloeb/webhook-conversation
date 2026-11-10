@@ -6,7 +6,8 @@ from types import MappingProxyType
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 
 from .const import (
     CONF_AI_TASK_WEBHOOK_URL,
@@ -14,7 +15,7 @@ from .const import (
     CONF_ENABLE_STREAMING,
     CONF_OUTPUT_FIELD,
     CONF_PASSWORD,
-    CONF_PROMPT,
+    CONF_PROFILE,
     CONF_TIMEOUT,
     CONF_USERNAME,
     CONF_WEBHOOK_URL,
@@ -23,7 +24,7 @@ from .const import (
     DEFAULT_CONVERSATION_NAME,
     DEFAULT_ENABLE_STREAMING,
     DEFAULT_OUTPUT_FIELD,
-    DEFAULT_PROMPT,
+    DEFAULT_PROFILE,
     DEFAULT_TIMEOUT,
     DOMAIN,
 )
@@ -84,7 +85,7 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
         CONF_OUTPUT_FIELD: config_entry.options.get(
             CONF_OUTPUT_FIELD, DEFAULT_OUTPUT_FIELD
         ),
-        CONF_PROMPT: config_entry.options.get(CONF_PROMPT, DEFAULT_PROMPT),
+        CONF_PROFILE: config_entry.options.get(CONF_PROFILE, DEFAULT_PROFILE),
         CONF_TIMEOUT: config_entry.options.get(CONF_TIMEOUT, DEFAULT_TIMEOUT),
         CONF_ENABLE_STREAMING: config_entry.options.get(
             CONF_ENABLE_STREAMING, DEFAULT_ENABLE_STREAMING

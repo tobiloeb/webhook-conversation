@@ -18,7 +18,7 @@
         },
         "select_profile": {
           "title": "Select profile",
-          "description": "Choose the agent profile for this conversation. The profile determines the system prompt and (in future) which tools and skills are available.",
+          "description": "Choose the agent profile for this conversation. The profile determines the system prompt and which tools and skills are available.",
           "data": {
             "profile": "Profile"
           },
@@ -38,11 +38,12 @@
       "error": {
         "invalid_webhook_url": "Invalid webhook URL",
         "invalid_auth": "Invalid authentication credentials",
+        "profiles_fetch_failed": "Could not load the profile list from the backend. Check the webhook URL and try again.",
         "unknown": "Unexpected error occurred"
       },
       "abort": {
         "entry_not_loaded": "Cannot add things while the configuration is disabled.",
-        "profiles_fetch_failed": "Could not load the profile list from the backend. Check the webhook URL and try again.",
+        "voices_fetch_failed": "Could not load the voice list from the backend. Check the webhook URL and try again.",
         "reconfigure_successful": "Reconfiguration successful"
       }
     },
@@ -57,7 +58,6 @@
           "data": {
             "webhook_url": "Webhook URL",
             "output_field": "Output field name",
-            "prompt": "System Prompt",
             "timeout": "Request timeout (seconds)",
             "enable_streaming": "Enable response streaming",
             "auth_type": "Authentication type"
