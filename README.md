@@ -218,7 +218,7 @@ This example workflow includes:
 >
 > For **AI tasks**: The `binary_objects` field is only included when attachments are present in the AI task. The `structure` field is only included when a JSON schema is provided by the action call. The `task_name` field is only included for AI tasks when provided by the action call. Each attachment is converted to base64 format and includes metadata such as filename, file path, and MIME type. The `profile` field is sent here as well and determines the system prompt used for the task.
 >
-> For **TTS**: The `voice_id` field contains the selected voice identifier from the backend catalog (see `GET /api/tts/voices`) and is always sent. The legacy `voice` field is only sent by older configurations. The webhook should return audio data with an appropriate Content-Type header (e.g., "audio/wav" or "audio/mp3").
+> **For TTS**: The `voice_id` field contains the selected voice identifier from the backend catalog (see `GET /api/tts/voices`) and is always sent. The legacy `voice` field is only sent by older configurations. The `whisper` field (boolean) is `true` when the user whispered at a voice satellite (hassmic sensor) or `tts.speak` was called with `options: {"whisper": true}`. The webhook should return audio data with an appropriate Content-Type header (e.g., "audio/wav" or "audio/mp3").
 >
 > For **STT** via http/https: The audio data is automatically converted to the appropriate format and encoded as base64. The `conversation_id` field is included when the STT request is part of a voice pipeline run, allowing you to correlate STT requests with their corresponding conversation webhook calls. The webhook should return a JSON response with the transcribed text in the configured output field (default: "output").
 >
@@ -432,9 +432,31 @@ Your webhook will receive POST requests with this JSON payload:
 {
   "text": "Hello, this is the text to be synthesized",
   "language": "en-US",
-  "voice": "optional_voice_name"
+  "voice": "optional_voice_name",
+  "voice_id": "optional_voice_id_from_catalog",
+  "whisper": false
 }
 ```
+
+### Whisper Mode
+
+If the user whispers at a voice satellite (echo-dot-assist/hassmic), the
+integration detects the satellite's `binary_sensor.*_last_request_whispered`
+sensor and sends `"whisper": true` so the backend can synthesize real whispered
+speech. The flag is stored per `conversation_id` in `whisper_state.py` and read
+back by the TTS entity via the current chat session. It is also exposed as a TTS
+option: `tts.speak` with `options: {"whisper": true}` whispers explicitly (an
+explicit option always wins over the sensor). Whisper is strictly fail-closed:
+it is only `true` when the sensor state is `on` **and** that state is at most
+`WHISPER_TTL_SECONDS` (30 s) old; if the device cannot be resolved, the sensor
+is missing, the state is unknown/stale, or the session context is absent, the
+flag is `false` (normal speech). Store entries expire after the same 30 s TTL,
+so answers slower than that are spoken normally. If the HA TTS cache collides
+for identical reply text in both modes (the sensor-derived flag is not part of
+the cache key; only explicit `tts.speak` options are), the wrong variant may be
+played back — a known residual risk until per-run `tts_options` are implemented.
+Requirement: hassmic ≥ PR #180 (ESPHome mode with the
+`whisper-static` model loaded).
 
 ### TTS Response Format
 

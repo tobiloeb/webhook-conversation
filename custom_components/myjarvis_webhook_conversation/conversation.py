@@ -32,6 +32,11 @@ from homeassistant.util import dt as dt_util
 from .const import CONF_OUTPUT_FIELD, DEFAULT_OUTPUT_FIELD, DOMAIN
 from .entity import WebhookConversationLLMBaseEntity
 from .models import WebhookConversationPayload
+from .whisper_state import (
+    WHISPER_TTL_SECONDS,
+    WhisperStateStore,
+    find_whisper_sensor,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -105,12 +110,49 @@ class WebhookConversationEntity(
 
         return conversation.async_get_result_from_chat_log(user_input, chat_log)
 
+    def _record_whisper_state(
+        self,
+        user_input: conversation.ConversationInput,
+        chat_log: conversation.ChatLog,
+    ) -> None:
+        """Merkt das Whisper-Ergebnis des Satelliten-Sensors pro conversation_id.
+
+        Die Conversation läuft nach STT — der hassmic-Sensor ist zu diesem
+        Zeitpunkt bereits gesetzt (unknown = vor Request, on = geflüstert).
+
+        Whisper ist strikt fail-closed: ``True`` nur wenn der Sensor ``on``
+        steht UND der Zustand höchstens WHISPER_TTL_SECONDS alt ist. Kein
+        Sensor, unbekannte device_id oder ein veralteter Zustand → ``False``.
+
+        WICHTIG (Key-Kopplung): Der Eintrag wird hier unter
+        ``chat_log.conversation_id`` gespeichert und in ``tts.py`` unter
+        ``session.conversation_id`` gelesen. Beide sind derzeit identisch
+        (der ChatLog wird mit der session.conversation_id erzeugt) — bei
+        Core-Änderungen an dieser Ableitung muss die Kopplung geprüft werden.
+        """
+        whispered = False
+        if user_input.satellite_id:
+            sensor_id = find_whisper_sensor(self.hass, user_input.satellite_id)
+            if sensor_id:
+                st = self.hass.states.get(sensor_id)
+                # hassmic setzt pro Request auf unknown zurück; "on" = geflüstert.
+                # Zusätzlich nur als frisch gewertet, wenn der Zustand sich
+                # innerhalb der TTL geändert hat (kein veralteter "on"-Wert).
+                if st is not None and st.state == "on":
+                    age = dt_util.utcnow() - st.last_changed
+                    whispered = age.total_seconds() <= WHISPER_TTL_SECONDS
+        store: WhisperStateStore = self.hass.data.setdefault(DOMAIN, {}).setdefault(
+            "whisper_state", WhisperStateStore()
+        )
+        store.record(chat_log.conversation_id, whispered)
+
     async def _async_handle_chat_log(
         self,
         user_input: conversation.ConversationInput,
         chat_log: conversation.ChatLog,
     ) -> None:
         """Send the chat log to the webhook and process the response."""
+        self._record_whisper_state(user_input, chat_log)
         payload = self._build_payload(chat_log)
         user_messages = [
             self._convert_content_to_param(user_message)
