@@ -15,6 +15,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.entity import Entity
+from homeassistant.helpers.json import ExtendedJSONEncoder
 
 from .const import (
     CONF_AUTH_TYPE,
@@ -194,6 +195,23 @@ class WebhookConversationLLMBaseEntity(WebhookConversationBaseEntity):
             }
         )
 
+    @staticmethod
+    def _serialize_tool_result(tool_result: Any) -> str:
+        """Serialize a tool result into a JSON string.
+
+        Tool results may contain native Python objects (``datetime.date`` /
+        ``datetime.time``, ``Decimal``, ``Enum``, sets, HA objects with
+        ``as_dict``...) that plain ``json.dumps`` cannot encode. Use Home
+        Assistant's extended JSON encoder and fall back to ``repr`` so a tool
+        result can never break the whole conversation request.
+        """
+        if tool_result is None:
+            return ""
+        try:
+            return json.dumps(tool_result, cls=ExtendedJSONEncoder)
+        except (TypeError, ValueError):
+            return repr(tool_result)
+
     def _convert_content_to_param(
         self, content: conversation.Content
     ) -> WebhookConversationMessage:
@@ -202,9 +220,7 @@ class WebhookConversationLLMBaseEntity(WebhookConversationBaseEntity):
             return WebhookConversationMessage(
                 {
                     "role": content.role,
-                    "content": json.dumps(content.tool_result)
-                    if content.tool_result is not None
-                    else "",
+                    "content": self._serialize_tool_result(content.tool_result),
                     "tool_call_id": content.tool_call_id,
                     "tool_name": content.tool_name,
                 }
