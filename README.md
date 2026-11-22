@@ -7,26 +7,35 @@
 > [!NOTE]
 > This integration requires Home Assistant `>=2026.4`.
 
-_Integration to connect Home Assistant conversation agents and AI features to external systems through webhooks._
+_Integration, um Home Assistant an das [my-jarvis Backend](https://github.com/tobiloeb/my-jarvis) anzubinden._
 
-**This integration allows you to use n8n workflows or other custom webhook-based systems as conversation agents in Home Assistant, enabling powerful automation and AI-driven interactions with your smart home.**
+**Diese Integration erweitert die Home-Assistant-Pipeline um my-jarvis: Conversation-Agent, AI Tasks, Speech-to-Text und Text-to-Speech werden vom my-jarvis-Server bereitgestellt. Home Assistant spricht dabei die HTTP-/WebSocket-Endpoints des Backends direkt an — die Integration ist fest an dieses Backend gebunden (siehe [my-jarvis](https://github.com/tobiloeb/my-jarvis)).**
 
 ## Features
 
-- 🤖 Use n8n workflows as conversation agents in Home Assistant
-- 🧩 AI Tasks via a dedicated webhook, supporting text or structured outputs
-- 💬 Text-to-Speech (TTS) support with custom webhook-based voice synthesis
-- 🎤 Speech-to-Text (STT) support with custom webhook-based voice recognition
-- 📎 Support for file attachments in AI Tasks (images, documents, etc.)
-- 📡 Send conversation context and exposed entities to webhooks
-- 🏠 Seamless integration with Home Assistant's voice assistant system
-- 🔧 Configurable webhook URLs and output fields
-- ⏱️ Configurable timeout for handling long-running workflows (1-300 seconds)
-- 🚀 Response streaming for real-time conversation responses
+- 🤖 Conversation-Agent: LLM-Interaktionen via `POST /api/agent/prompt` (Streaming)
+- 🧩 AI Tasks via denselben Endpoint, mit strukturierten Ausgaben (JSON Schema) und Dateianhängen
+- 💬 Text-to-Speech (TTS) via `POST /api/tts` mit Stimmen-Katalog des Backends (`GET /api/tts/voices`)
+- 🎤 Speech-to-Text (STT) via WebSocket `ws(s)://…/ws/audio` (Audio-Streaming) oder HTTP-POST
+- 📎 Support für Dateianhänge in AI Tasks (Bilder, Dokumente etc.)
+- 📡 Sendet Gesprächskontext und die exponierten Entities (Hausstruktur: Etagen, Räume, Geräte) an das Backend
+- 🏠 Nahtlose Integration in die Voice-Assistant-Pipelines von Home Assistant
+- 🔧 Konfigurierbare Webhook-URLs und Ausgabefelder pro Subentry
+- ⏱️ Konfigurierbarer Timeout für langlaufende Anfragen (1–300 Sekunden)
+- 🚀 Response-Streaming für Echtzeit-Antworten
 
-## Quick Start
+## Architektur
 
-🚀 **New to n8n workflows?** Check out our [example workflow](examples/simple_n8n_workflow.json) for a complete working setup with OpenAI integration and attachment support!
+```
+Home Assistant (diese Integration)          my-jarvis Backend
+───────────────────────────────────          ─────────────────────────
+Conversation / AI Task  ──── POST ─────────► /api/agent/prompt (NDJSON-Stream)
+Profile-Auswahl         ◄──── GET ────────── /api/profiles
+STT (Streaming)         ──── WS ───────────► /ws/audio
+STT (HTTP-Fallback)     ──── POST ─────────► <konfigurierte URL>
+TTS                     ──── POST ─────────► /api/tts
+TTS-Stimmen-Auswahl     ◄──── GET ────────── /api/tts/voices
+```
 
 ## Installation
 
@@ -43,7 +52,7 @@ _Integration to connect Home Assistant conversation agents and AI features to ex
 4. Restart Home Assistant
 
 > [!NOTE]
-> This fork installs directly from the `master` branch, so every push to `master` is picked up by HACS as an update.
+> Dieses Repository installiert direkt aus dem `master`-Branch, sodass jeder Push auf `master` von HACS als Update erkannt wird.
 
 ### Manual Installation
 
@@ -67,75 +76,53 @@ The setup process consists of two steps:
 
 After the integration is added, you'll see the "Webhook Conversation for MyJarvis" integration on your integrations page. From there:
 
-1. **Add Conversation Agent**: Click the **"Add Entry"** button on the integration page and select **"Conversation Agent"** to create a new webhook-based conversation agent. Configure it with:
-   - **Webhook URL**: The URL of your webhook endpoint (remember to activate the workflow in n8n and to use the production webhook URL)
-   - **Output Field**: The field name in the webhook response containing the reply (default: "output")
+1. **Add Conversation Agent**: Click the **"Add Entry"** button on the integration page and select **"Conversation Agent"** to create a new conversation agent. Configure it with:
+   - **Webhook URL**: The URL of the my-jarvis endpoint, e.g. `http://<myjarvis-host>:8001/api/agent/prompt`
+   - **Output Field**: The field name in the response containing the reply (default: "output")
    - **Timeout**: The timeout in seconds for waiting for a response (default: 30 seconds, range: 1-300 seconds)
-   - **Enable Response Streaming**: Enable real-time streaming of responses as they are generated (default: disabled)
-   - **System Prompt**: A custom system prompt to provide additional context or instructions to your AI model
+   - **Enable Response Streaming**: Enable real-time streaming of responses as they are generated (default: enabled)
+   - **Profile**: The agent profile provided by the backend (`GET /api/profiles`). The profile determines the system prompt and which tools and skills are available — the prompt is maintained exclusively in the backend.
 
-2. **Add AI Task**: Click the **"Add Entry"** button on the integration page and select **"AI Task"** to create a webhook-based AI task handler. Configure it with:
-   - **Webhook URL**: The URL of your webhook endpoint (remember to activate the workflow in n8n and to use the production webhook URL)
-   - **Output Field**: The field name in the webhook response containing the reply (default: "output")
+2. **Add AI Task**: Click the **"Add Entry"** button on the integration page and select **"AI Task"** to create a new AI task handler. Configure it with:
+   - **Webhook URL**: The URL of the my-jarvis endpoint, e.g. `http://<myjarvis-host>:8001/api/agent/prompt`
+   - **Output Field**: The field name in the response containing the reply (default: "output")
    - **Timeout**: The timeout in seconds for waiting for a response (default: 30 seconds, range: 1-300 seconds)
-   - **Enable Response Streaming**: Enable real-time streaming of responses as they are generated (default: disabled)
-   - **System Prompt**: A custom system prompt to provide additional context or instructions to your AI model
+   - **Enable Response Streaming**: Enable real-time streaming of responses as they are generated (default: enabled)
+   - **Profile**: The agent profile provided by the backend
 
-3. **Add TTS (Text-to-Speech)**: Click the **"Add Entry"** button on the integration page and select **"TTS"** to create a webhook-based text-to-speech service. Configure it with:
-   - **Webhook URL**: The URL of your webhook endpoint that will handle TTS requests
+3. **Add TTS (Text-to-Speech)**: Click the **"Add Entry"** button on the integration page and select **"TTS"** to create a new text-to-speech service. Configure it with:
+   - **Webhook URL**: The URL of the my-jarvis TTS endpoint, e.g. `http://<myjarvis-host>:8001/api/tts`
    - **Supported Languages**: List of language codes the TTS service supports
    - **Voice**: Dropdown with all voices offered by the backend (`GET /api/tts/voices`), labeled with provider and voice name (e.g. "Gemini – Charon"). The backend maps the selected voice to the correct provider, model and voice.
    - **Timeout**: The timeout in seconds for waiting for audio response (default: 30 seconds, range: 1-300 seconds)
-   - **Supported Languages**: List of supported language codes (e.g., "en-US", "de-DE", "fr-FR")
-   - **Authentication**: Optional HTTP basic authentication for securing your webhook endpoint
+   - **Authentication**: Optional HTTP basic authentication for securing the endpoint
 
-4. **Add STT (Speech-to-Text)**: Click the **"Add Entry"** button on the integration page and select **"STT"** to create a webhook-based speech-to-text service. Configure it with:
-   - **Webhook URL**: The URL of your webhook endpoint that will handle STT requests
+4. **Add STT (Speech-to-Text)**: Click the **"Add Entry"** button on the integration page and select **"STT"** to create a new speech-to-text service. Configure it with:
+   - **Webhook URL**: The URL of the my-jarvis audio endpoint, e.g. `ws://<myjarvis-host>:8001/ws/audio` (WebSocket streaming) or an HTTP endpoint for the non-streaming fallback
    - **Timeout**: The timeout in seconds for waiting for transcription response (default: 30 seconds, range: 1-300 seconds)
    - **Supported Languages**: List of supported language codes (e.g., "en-US", "de-DE", "fr-FR")
-   - **Output Field**: The field name in the webhook response containing the transcribed text (default: "output")
-   - **Authentication**: Optional HTTP basic authentication for securing your webhook endpoint
+   - **Output Field**: The field name in the response containing the transcribed text (default: "output")
+   - **Authentication**: Optional HTTP basic authentication for securing the endpoint
 
 > [!NOTE]
 > You can add multiple conversation agents, AI task handlers, TTS services, and STT services by repeating steps 2-4. Each can be configured with different webhook URLs and settings to support various use cases.
 
-### n8n Workflow Setup
+### my-jarvis Backend Setup
 
-Create an n8n workflow with the following structure:
+Die Integration ist fest an das [my-jarvis Backend](https://github.com/tobiloeb/my-jarvis) gebunden. Starte den Server (Details in der [my-jarvis README](https://github.com/tobiloeb/my-jarvis)) und trage die folgenden URLs in den Subentries ein:
 
-1. **Webhook Trigger**: Set up a webhook trigger to receive POST requests from Home Assistant
-2. **Process the payload**: Your workflow should include a node to process the incoming payload from Home Assistant. This can be done using the "Set" node to extract relevant information from the incoming JSON.
-3. **Your AI/Processing Logic**: Process the conversation and entity data
-4. **Return Response**: Return a JSON response with your configured output field
+| Subentry | Webhook URL |
+| --- | --- |
+| Conversation Agent | `http://<myjarvis-host>:8001/api/agent/prompt` |
+| AI Task | `http://<myjarvis-host>:8001/api/agent/prompt` |
+| TTS | `http://<myjarvis-host>:8001/api/tts` |
+| STT | `ws://<myjarvis-host>:8001/ws/audio` |
 
-Note: For AI Tasks, the output value should adhere to the JSON schema provided in the `structure` field.
-
-#### Example Workflow
-
-For a quick start, you can use the provided example workflow that demonstrates a complete integration with OpenAI's GPT model and attachment and streaming support:
-
-📁 **[Simple n8n Workflow](examples/simple_n8n_workflow.json)**
-
-This example workflow includes:
-
-- **Webhook Trigger**: Receives POST requests from Home Assistant
-- **Extract Attachments**: JavaScript code node that processes binary attachments from AI Tasks
-- **OpenAI Integration**: GPT model integration with dynamic response format (text or JSON)
-- **AI Agent**: LangChain agent that handles the conversation and processes attachments
-- **Response Handler**: Responses are returned to Home Assistant in chunks
-
-**To use this example:**
-
-1. Download the [workflow file](examples/simple_n8n_workflow.json)
-2. Import it into your n8n instance (Settings → Import from file)
-3. Configure your OpenAI credentials in the OpenAI node
-4. Update the model name to match your available OpenAI model
-5. Activate the workflow
-6. Copy the webhook URL and use it in your Home Assistant n8n conversation integration
+Die Profile-Auswahl (`GET /api/profiles`) und der TTS-Stimmen-Katalog (`GET /api/tts/voices`) werden vom Backend bereitgestellt und im Konfigurationsdialog geladen. Der System-Prompt wird ausschließlich im Backend-Profil gepflegt — es gibt kein Prompt-Feld in der Konfiguration.
 
 #### Input schema
 
-##### For **conversations**
+##### For **conversations** and **AI tasks** (POST `/api/agent/prompt`)
 
 ```json
 {
@@ -150,6 +137,7 @@ This example workflow includes:
     "manufacturer": "Raspberry Pi",
     "model": "Pi 4B"
   },
+  "area": "Living Room",
   "messages": [
     {
       "role": "assistant|system|tool_result|user",
@@ -157,35 +145,20 @@ This example workflow includes:
     }
   ],
   "query": "latest user message",
-  "exposed_entities": [
-    {
-      "entity_id": "light.living_room",
-      "name": "Living Room Light",
-      "state": "on",
-      "aliases": ["main light"],
-      "area_id": "living_room",
-      "area_name": "Living Room"
-    }
-  ],
+  "exposed_entities": "{\"floors\": [{\"id\": \"ground\", \"name\": \"Ground Floor\", \"aliases\": [], \"level\": 0, \"rooms\": [{\"id\": \"living_room\", \"name\": \"Living Room\", \"aliases\": [\"wohnzimmer\"], \"devices\": [{\"entity_id\": \"light.living_room\", \"names\": \"Living Room Light\", \"domain\": \"light\"}]}]}]}",
   "profile": "default",
-  "stream": false
+  "stream": true
 }
 ```
 
-##### For **AI tasks**
+> `exposed_entities` enthält die Hausstruktur der exponierten Entities (Etagen → Räume → Geräte, inkl. Aliases) als serialisierte JSON-Struktur.
+
+##### Zusätzliche Felder für **AI tasks**
 
 ```json
 {
-  "conversation_id": "abc123",
-  "messages": [
-    {
-      "role": "assistant|system|tool_result|user",
-      "content": "message content"
-    }
-  ],
   "query": "task instructions",
   "task_name": "task name",
-  "profile": "default",
   "structure": "json schema for output",
   "binary_objects": [
     {
@@ -194,12 +167,9 @@ This example workflow includes:
       "mime_type": "image/jpeg",
       "data": "base64_encoded_file_content"
     }
-  ],
-  "stream": false
+  ]
 }
 ```
-
-##### For **STT (Speech-to-Text)**
 
 ```json
 {
@@ -214,15 +184,15 @@ This example workflow includes:
 ```
 
 > [!NOTE]
-> For **conversations**: The `device_id` and `device_info` fields are only set when the conversation was initiated via a voice satellite. The `language` field contains the language code (e.g., "de-DE") configured for the conversation. The `agent_id` field contains the entity ID of the conversation agent. The `profile` field contains the conversation profile ID selected in the configuration (e.g. "default", "mathea"); the system prompt is loaded from the backend profile — there is no `system_prompt` field in the payload anymore.
+> For **conversations**: The `device_id` and `device_info` fields are only set when the conversation was initiated via a voice satellite. The `language` field contains the language code (e.g., "de-DE") configured for the conversation. The `agent_id` field contains the entity ID of the conversation agent. The `area` field contains the name of the room the request originated from (voice satellite), if known. The `profile` field contains the conversation profile ID selected in the configuration (e.g. "default"); the system prompt is loaded from the backend profile — there is no `system_prompt` field in the payload.
 >
-> For **AI tasks**: The `binary_objects` field is only included when attachments are present in the AI task. The `structure` field is only included when a JSON schema is provided by the action call. The `task_name` field is only included for AI tasks when provided by the action call. Each attachment is converted to base64 format and includes metadata such as filename, file path, and MIME type. The `profile` field is sent here as well and determines the system prompt used for the task.
+> For **AI tasks**: The `binary_objects` field is only included when attachments are present in the AI task. The `structure` field is only included when a JSON schema is provided by the action call. The `task_name` field is only included when provided by the action call. Each attachment is converted to base64 format and includes metadata such as filename, file path, and MIME type. The `profile` field is sent here as well and determines the system prompt used for the task.
 >
-> For **TTS**: The `voice_id` field contains the selected voice identifier from the backend catalog (see `GET /api/tts/voices`) and is always sent. The legacy `voice` field is only sent by older configurations. The webhook should return audio data with an appropriate Content-Type header (e.g., "audio/wav" or "audio/mp3").
+> For **TTS**: The `voice_id` field contains the selected voice identifier from the backend catalog (see `GET /api/tts/voices`). The legacy `voice` field is only sent by older configurations. The endpoint should return audio data with an appropriate Content-Type header (`audio/wav` or `audio/mp3`).
 >
-> For **STT** via http/https: The audio data is automatically converted to the appropriate format and encoded as base64. The `conversation_id` field is included when the STT request is part of a voice pipeline run, allowing you to correlate STT requests with their corresponding conversation webhook calls. The webhook should return a JSON response with the transcribed text in the configured output field (default: "output").
+> For **STT** via http/https: The audio data is automatically converted to the appropriate format and encoded as base64. The `conversation_id` field is included when the STT request is part of a voice pipeline run, allowing you to correlate STT requests with their corresponding conversation calls. The endpoint should return a JSON response with the transcribed text in the configured output field (default: "output").
 >
-> For **STT** via ws/wss: The websocket message sequence is:
+> For **STT** via ws/wss (e.g. `/ws/audio`): The websocket message sequence is:
 > 1. a first **text** frame containing the JSON metadata shown above,
 > 2. one or more **binary** frames containing the audio bytes,
 > 3. a final **text** frame with `{"type": "eof"}` to mark the end of the audio stream,
@@ -232,7 +202,7 @@ This example workflow includes:
 
 ## Authentication
 
-The webhook conversation integration supports **basic HTTP authentication** for secure communication with your webhook endpoints. This ensures that only authorized requests can access your n8n workflows or other webhook services.
+The integration supports **basic HTTP authentication** for secure communication with the my-jarvis backend (or any other compatible endpoint). This ensures that only authorized requests can access your endpoints.
 
 ### Configuration
 
@@ -241,58 +211,48 @@ To enable basic HTTP authentication:
 1. In the integration configuration, provide:
    - **Username**: Your HTTP authentication username
    - **Password**: Your HTTP authentication password
-2. The integration will automatically include the proper authentication headers in all requests to your webhook URLs
+2. The integration will automatically include the proper authentication headers in all requests
 
-### n8n Authentication Setup
+### Backend Authentication Setup
 
-For n8n workflows, you can secure your webhook endpoints by:
-
-1. **In your n8n workflow**:
-   - Open the Webhook Trigger node
-   - Go to the "Settings" tab
-   - Under "Authentication", select "Basic Auth"
-   - Set your desired username and password via the credential property
-
-2. **In Home Assistant**:
-   - Use the same username and password in your webhook conversation integration configuration
-   - The integration will automatically authenticate with your secured n8n webhook
+The my-jarvis backend can optionally require basic authentication for its endpoints. Configure the same username and password on both sides — the integration will then authenticate automatically with every request (including the WebSocket connection for STT).
 
 > [!IMPORTANT]
-> Basic HTTP authentication credentials are transmitted with every request. Always use HTTPS to ensure credentials are encrypted in transit.
+> Basic HTTP authentication credentials are transmitted with every request. Always use HTTPS/WSS to ensure credentials are encrypted in transit.
 
 ## Usage
 
 ### Voice Assistant Pipeline Setup
 
-To use the n8n conversation agent with voice assistants, you need to create a voice assistant pipeline:
+To use my-jarvis with voice assistants, you need to create a voice assistant pipeline:
 
 1. Go to **Settings** → **Voice assistants**
 2. Click **Add Assistant**
 3. Configure your pipeline:
    - **Name**: Give your pipeline a descriptive name (e.g., "Webhook Assistant")
    - **Language**: Select your preferred language
-   - **Speech-to-text**: Choose your preferred STT engine (e.g., Whisper, Google Cloud, or your webhook STT service)
-   - **Conversation agent**: Select your webhook conversation agent from the dropdown
-   - **Text-to-speech**: Choose your preferred TTS engine (e.g., Google Translate, Piper, or your webhook TTS service)
+   - **Speech-to-text**: Choose your preferred STT engine (e.g., the my-jarvis STT service via `/ws/audio`)
+   - **Conversation agent**: Select your my-jarvis conversation agent from the dropdown
+   - **Text-to-speech**: Choose your preferred TTS engine (e.g., the my-jarvis TTS service)
    - **Wake word**: Optionally configure a wake word engine
 4. Click **Create** to save your pipeline
 5. Set this pipeline as the default for voice assistants or assign it to specific devices
 
 ## Response Streaming
 
-The webhook conversation integration supports **optional response streaming** for real-time conversation responses. When enabled, responses are streamed as they are generated, providing a more natural and responsive conversation experience.
+The webhook conversation integration supports **response streaming** for real-time conversation responses. When enabled, responses are streamed as they are generated, providing a more natural and responsive conversation experience.
 
 ### How Response Streaming Works
 
 When response streaming is enabled:
 
-1. **Real-time Updates**: Responses appear in real-time as they are generated by your webhook endpoint
+1. **Real-time Updates**: Responses appear in real-time as they are generated by the backend
 2. **Improved User Experience**: Users see responses being typed out naturally, similar to ChatGPT-style interfaces
 3. **Better Performance**: No need to wait for the complete response before displaying it to the user
 
-### Webhook Response Format for Streaming
+### Response Format for Streaming
 
-When streaming is enabled, your webhook endpoint should return responses in a streaming format instead of a single JSON response. The expected format is:
+When streaming is enabled, the endpoint should return responses as **NDJSON** (one JSON object per line) instead of a single JSON response. The expected format is:
 
 ```json
 {"type": "item", "content": "First part of the response"}
@@ -301,16 +261,14 @@ When streaming is enabled, your webhook endpoint should return responses in a st
 {"type": "end"}
 ```
 
-#### Example n8n Streaming Setup
+The my-jarvis backend (`/api/agent/prompt`) streams exactly in this format (with `{"type": "done"}` / `{"type": "error", "message": "…"}` as terminator events). The integration keeps reading until the stream closes, since the backend can emit multiple begin/end blocks when tools are used.
 
-To implement streaming in your n8n workflow:
-
-1. **Configure Webhook Node**: Set the response mode to "Streaming"
-2. **Configure Agent Node**: Enable streaming in the agent node settings
+> [!TIP]
+> Streaming is enabled by default. Disable it in the subentry options if your endpoint only returns a single JSON response (with the configured output field).
 
 ## Attachment Support
 
-The webhook conversation integration supports file attachments in AI Tasks, allowing you to send images, documents, and other files to your n8n workflows for processing.
+The webhook conversation integration supports file attachments in AI Tasks, allowing you to send images, documents, and other files to the my-jarvis backend for processing.
 
 ### How Attachments Work
 
@@ -329,44 +287,44 @@ Each attachment in the `binary_objects` array contains:
 - `mime_type`: The MIME type of the file (e.g., "image/jpeg", "application/pdf")
 - `data`: The base64-encoded file content
 
-### Processing Attachments in n8n
+### Verarbeitung von Anhängen im Backend
 
-In your n8n workflow, you can process attachments by:
+Das my-jarvis-Backend verarbeitet die `binary_objects` direkt (z. B. für Bildverarbeitung im Agenten). Falls du ein eigenes Backend anbindest:
 
-1. **Accessing the binary_objects array**: Use `{{ $json.body.binary_objects }}` to access all attachments
-2. **Processing individual files**: Loop through the array or access specific attachments by index
-3. **Decoding base64 data**: Use the function node in the example workflow or your own custom code to decode the file content
-4. **File type handling**: Use the `mime_type` field to determine how to process different file types
+1. **`binary_objects`-Array auslesen**: Alle Anhänge stehen dort zur Verfügung
+2. **Einzelne Dateien verarbeiten**: Schleife über das Array oder Zugriff per Index
+3. **Base64 dekodieren**: Die `data`-Felder enthalten den base64-kodierten Dateiinhalt
+4. **Dateityp beachten**: Das `mime_type`-Feld bestimmt die Verarbeitung
 
 > [!TIP]
-> Attachment support is only available for AI Tasks, not regular conversation messages. Make sure your n8n workflow can handle payloads both with and without the `binary_objects` field.
+> Die AI-Task-Ausgabe sollte dem JSON-Schema aus dem `structure`-Feld entsprechen. Tool-Calls in der Webhook-Antwort werden ignoriert — Home-Assistant-Aktionen laufen ausschließlich über die MCP-Tools des my-jarvis-Backends.
 
 ## Speech-to-Text (STT) Support
 
-The webhook conversation integration includes support for custom Speech-to-Text services through webhooks, allowing you to use external STT engines like OpenAI's Whisper API, Google Cloud Speech-to-Text, or custom speech recognition solutions.
+The integration forwards voice input to my-jarvis for speech-to-text transcription. The backend streams the audio via WebSocket (`/ws/audio`, with Google STT and speaker recognition) and returns the transcript, which is then passed to the conversation agent.
 
 ### How STT Works
 
-When configured, the STT webhook integration:
+When configured, the STT service:
 
 1. **Receives audio data**: Home Assistant captures voice input from microphones or voice satellites
-2. **Processes via webhook**: Your webhook endpoint receives the audio data and converts it to text
-3. **Returns transcribed text**: The webhook returns the transcribed text in JSON format
-4. **Integrates with conversation**: The transcribed text is passed to your conversation agent for processing
+2. **Processes via backend**: The audio is streamed to my-jarvis (`ws://…/ws/audio`) or sent as a base64 POST request (HTTP fallback)
+3. **Returns transcribed text**: The transcript is returned as a JSON response
+4. **Integrates with conversation**: The transcribed text is passed to the conversation agent for processing
 
 ### STT Configuration
 
 When adding an STT subentry, you can configure:
 
-- **Webhook URL**: The endpoint that will handle speech-to-text transcription requests
+- **Webhook URL**: The endpoint handling transcription requests — `ws://<myjarvis-host>:8001/ws/audio` for streaming, or an HTTP URL for the non-streaming fallback
 - **Supported Languages**: List of language codes your STT service supports (e.g., "en-US", "de-DE", "fr-FR")
-- **Output Field**: The field name in the webhook response containing the transcribed text (default: "output")
+- **Output Field**: The field name in the response containing the transcribed text (default: "output")
 - **Timeout**: How long to wait for transcription (default: 30 seconds)
-- **Authentication**: HTTP basic authentication for securing your webhook
+- **Authentication**: HTTP basic authentication for securing the endpoint
 
-### STT Request Format
+### STT Request Format (HTTP fallback)
 
-Your webhook will receive POST requests with this JSON payload:
+The endpoint will receive POST requests with this JSON payload:
 
 ```json
 {
@@ -382,7 +340,7 @@ Your webhook will receive POST requests with this JSON payload:
 
 ### STT Response Format
 
-Your webhook should return a JSON response with the transcribed text:
+The endpoint should return a JSON response with the transcribed text:
 
 ```json
 {
@@ -392,41 +350,41 @@ Your webhook should return a JSON response with the transcribed text:
 
 ### Usage in Voice Assistants
 
-Once configured, your STT webhook service will appear in Home Assistant's STT service list and can be used:
+Once configured, your STT service will appear in Home Assistant's STT service list and can be used:
 
-1. **Voice Assistant Pipelines**: Select your webhook STT service in voice assistant pipeline configuration
+1. **Voice Assistant Pipelines**: Select your my-jarvis STT service in voice assistant pipeline configuration
 2. **Voice Satellites**: Use with Wyoming satellite devices or other voice input devices
 3. **Mobile Apps**: Compatible with Home Assistant mobile app voice input
 
 > [!TIP]
-> The integration automatically converts raw audio streams to properly formatted WAV files with headers before encoding to base64. This ensures compatibility with most external STT services that expect standard audio file formats.
+> For the HTTP fallback, the integration automatically converts raw audio streams to properly formatted WAV files with headers before encoding to base64. In WebSocket mode the binary frames contain raw PCM samples matching the metadata (see the note on the STT websocket protocol above) — my-jarvis decodes the stream accordingly.
 
 ## Text-to-Speech (TTS) Support
 
-The webhook conversation integration includes support for custom Text-to-Speech services through webhooks, allowing you to use external TTS engines like OpenAI's TTS API, ElevenLabs, or custom voice synthesis solutions.
+The integration synthesizes speech via my-jarvis. The backend maps the selected `voice_id` to the configured provider (Gemini, ElevenLabs, Microsoft, Mistral, or a local OpenAI-compatible TTS server) and returns the audio.
 
 ### How TTS Works
 
-When configured, the TTS webhook integration:
+When configured, the TTS service:
 
 1. **Receives TTS requests**: Home Assistant sends text that needs to be synthesized to speech
-2. **Processes via webhook**: Your webhook endpoint processes the text and generates audio
-3. **Returns audio data**: The webhook returns audio data in WAV or MP3 format
+2. **Processes via backend**: my-jarvis generates the audio with the configured provider
+3. **Returns audio data**: The endpoint returns audio data in WAV or MP3 format
 4. **Plays in Home Assistant**: The audio is played through Home Assistant's audio system
 
 ### TTS Configuration
 
 When adding a TTS subentry, you can configure:
 
-- **Webhook URL**: The endpoint that will handle TTS synthesis requests
+- **Webhook URL**: The endpoint handling TTS synthesis requests (`http://<myjarvis-host>:8001/api/tts`)
 - **Supported Languages**: List of language codes your TTS service supports (e.g., "en-US", "de-DE", "fr-FR")
 - **Voice**: The voice to use, selected from a dropdown fetched from the backend's `GET /api/tts/voices` endpoint. Each TTS subentry can use a different voice — add multiple TTS subentries to use different voices in different voice pipelines.
 - **Timeout**: How long to wait for audio generation (default: 30 seconds)
-- **Authentication**: HTTP basic authentication for securing your webhook
+- **Authentication**: HTTP basic authentication for securing the endpoint
 
 ### TTS Request Format
 
-Your webhook will receive POST requests with this JSON payload:
+The endpoint will receive POST requests with this JSON payload:
 
 ```json
 {
@@ -438,7 +396,7 @@ Your webhook will receive POST requests with this JSON payload:
 
 ### TTS Response Format
 
-Your webhook should return audio data with the appropriate Content-Type header:
+The endpoint should return audio data with the appropriate Content-Type header:
 
 - **Content-Type**: Must be `audio/wav` or `audio/mp3`
 - **Body**: Raw audio data in the specified format
@@ -447,8 +405,8 @@ Your webhook should return audio data with the appropriate Content-Type header:
 
 Once configured, your TTS webhook service will appear in Home Assistant's TTS service list and can be used:
 
-1. **Voice Assistant Pipelines**: Select your webhook TTS service in voice assistant pipeline configuration
-2. **TTS Service Calls**: Use the `tts.speak` service with your webhook TTS entity
+1. **Voice Assistant Pipelines**: Select your my-jarvis TTS service in voice assistant pipeline configuration
+2. **TTS Service Calls**: Use the `tts.speak` service with your my-jarvis TTS entity
 3. **Media Players**: The generated audio can be played on any media player device
 
 ### Supported Audio Formats
@@ -459,7 +417,7 @@ The TTS webhook integration supports:
 - **MP3**: Compressed audio format (`audio/mp3`)
 
 > [!TIP]
-> For best performance, consider using MP3 format to reduce bandwidth usage, especially for longer text synthesis. Make sure your webhook endpoint sets the correct Content-Type header to match the audio format being returned.
+> For best performance, consider using MP3 format to reduce bandwidth usage, especially for longer text synthesis. Make sure the endpoint sets the correct Content-Type header to match the audio format being returned.
 
 ## Contributing
 

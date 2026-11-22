@@ -2,7 +2,7 @@
 
 ## Was ist das?
 
-HACS-Integration für Home Assistant. Sie exponiert HAs Conversation-, AI-Task-, STT- und TTS-Plattformen als HTTP/WebSocket-Webhooks an einen externen Server (z. B. n8n oder das my-jarvis-Projekt).
+HACS-Integration für Home Assistant. Sie exponiert HAs Conversation-, AI-Task-, STT- und TTS-Plattformen als HTTP/WebSocket-Webhooks an das my-jarvis-Backend (https://github.com/tobiloeb/my-jarvis). Die Integration ist fest an dieses Backend gebunden.
 
 ## Backend: my-jarvis
 
@@ -38,7 +38,7 @@ Dort implementieren `src/jarvis_agent/server.py` die Ziel-Endpoints `/ws/audio` 
 
 ## Stolperfallen
 
-- Streaming antwortet in JSON-Lines; nach einem `"end"`-Event NICHT abbrechen, bis der Stream schließt (n8n sendet mehrere begin/end-Blöcke bei Tools).
+- Streaming antwortet in JSON-Lines; nach einem `"end"`-Event NICHT abbrechen, bis der Stream schließt (das Backend sendet mehrere begin/end-Blöcke bei Tools).
 - Entity-/Area-/Floor-Aliase aus den HA-Registries sind **Python-Listen** — kein `.filter()`/`.map()` (war schon mal ein Bug).
 - Optional Basic Auth pro Subentry konfigurierbar (`entity.py`).
 
