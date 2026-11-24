@@ -337,10 +337,6 @@ class WebhookConversationEntity(
             entity_entry = entity_registry.async_get(state.entity_id)
             names = [state.name]
             area_entry = None
-            _LOGGER.info(
-                "Entity %s is exposed:",
-                state.name,
-            )
 
             if entity_entry is not None:
                 names.extend(
@@ -460,7 +456,7 @@ class WebhookConversationEntity(
         # JSON für dein System Prompt
         json_output = json.dumps(home, ensure_ascii=False, indent=2)
 
-        _LOGGER.info(
+        _LOGGER.debug(
             "get exposed entities time to take %s:",
             time.perf_counter() - start,
         )
