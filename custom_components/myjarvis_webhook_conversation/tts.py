@@ -18,7 +18,6 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-from propcache.api import cached_property
 
 from .const import (
     CONF_SUPPORTED_LANGUAGES,
@@ -26,11 +25,14 @@ from .const import (
     CONF_VOICE,
     CONF_VOICES,
     DEFAULT_TIMEOUT,
+    DOMAIN,
 )
 from .entity import WebhookConversationBaseEntity
 from .models import WebhookTTSRequestPayload
 
 _LOGGER = logging.getLogger(__name__)
+
+ATTR_WHISPER = "whisper"
 
 
 async def async_setup_entry(
@@ -78,8 +80,11 @@ class WebhookConversationTextToSpeechEntity(
             voice_id = legacy[0] if isinstance(legacy, list) else str(legacy)
 
         self._voice_id = voice_id
+        # "whisper" ist immer supported, damit tts.speak/Automationen und
+        # Satelliten-tts_options den Key setzen können (sonst lehnt
+        # process_options ihn als invalid ab).
+        self._attr_supported_options = [ATTR_VOICE, ATTR_WHISPER]
         if voice_id:
-            self._attr_supported_options = [ATTR_VOICE]
             self._voices = [Voice(voice_id, voice_id)]
 
     @callback
@@ -87,14 +92,41 @@ class WebhookConversationTextToSpeechEntity(
         """Return a list of supported voices for a language."""
         return self._voices
 
-    @cached_property
-    def default_options(self) -> Mapping[str, Any] | None:
-        """Return a mapping with the default options."""
-        if not self._voices:
-            return None
-        return {
-            ATTR_VOICE: self._voices[0],
-        }
+    def _whisper_from_session(self) -> bool:
+        """Verbraucht das Whisper-Flag aus dem conversation_id-Store (Default False).
+
+        Genau einmal pro TTS-Aufruf aufrufen (in ``async_get_tts_audio``) —
+        ``consume`` poppt den Eintrag. Abgelaufene Einträge
+        (> WHISPER_TTL_SECONDS) liefern False. Fail-closed: Kein Session-
+        Kontext, kein Store oder unbekannte conversation_id → False.
+        """
+        from homeassistant.helpers.chat_session import current_session
+
+        session = current_session.get()
+        if session is None:
+            return False
+        store = self.hass.data.get(DOMAIN, {}).get("whisper_state")
+        if store is None:
+            return False
+        return bool(store.consume(session.conversation_id))
+
+    @property
+    def default_options(self) -> Mapping[str, Any]:
+        """Return a mapping with the default options.
+
+        Bewusst als normale ``@property`` (nicht ``cached_property``) und
+        ohne Nebenwirkungen: HA wertet ``default_options`` in
+        ``process_options`` aus (bereits in ``prepare_text_to_speech``, also
+        VOR der Conversation — dort ist der Whisper-Store noch leer). Der
+        Whisper-Wert darf daher NICHT hier ermittelt werden, sondern erst in
+        ``async_get_tts_audio``. Explizite ``tts.speak``-Optionen (inkl.
+        ``whisper``) fließen über die gehashten Optionen korrekt in den
+        HA-Cache-Key ein.
+        """
+        opts: dict[str, Any] = {}
+        if self._voices:
+            opts[ATTR_VOICE] = self._voices[0]
+        return opts
 
     async def async_get_tts_audio(
         self, message: str, language: str, options: dict[str, Any]
@@ -110,6 +142,29 @@ class WebhookConversationTextToSpeechEntity(
             "text": message,
             "language": language,
         }
+
+        # Whisper strikt fail-closed: Explizite tts.speak-Option gewinnt immer
+        # gegenüber dem Store (Key IMMER prüfen — bool("false") ist True, daher
+        # nur echte Bools akzeptieren). Ohne explizite Option wird das Flag
+        # genau einmal aus dem Store verbraucht (Pipeline-Pfad) — gelesen wird
+        # unter ``session.conversation_id`` (identisch mit ``chat_log.conversation_id``,
+        # unter dem ``conversation.py`` speichert; Kopplung siehe dort).
+        # Alles Unklare → False: Whisper ist nur ein optionales Feature.
+        if ATTR_WHISPER in options:
+            whisper = options[ATTR_WHISPER] is True
+        else:
+            whisper = self._whisper_from_session()
+        payload["whisper"] = whisper
+
+        if whisper:
+            # M1 (Review): Im Pipeline-Pfad kann der HA-TTS-Cache normale und
+            # geflüsterte Ausgabe bei identischem Antworttext kollidieren lassen
+            # (Cache-Key wird vor der Conversation berechnet). Beobachten bis
+            # "Weg A" (tts_options pro Run) steht.
+            _LOGGER.info(
+                "Whisper-Ausgabe angefordert (explizite Option=%s)",
+                ATTR_WHISPER in options,
+            )
 
         # Die Stimmen-ID wird direkt an das Backend gesendet; dieses mapped
         # sie harte auf Vendor, Modell und Provider-Stimme.

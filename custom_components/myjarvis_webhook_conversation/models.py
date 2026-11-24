@@ -82,6 +82,9 @@ class WebhookTTSRequestPayload(TypedDict):
     language: str
     voice: NotRequired[str]
     voice_id: NotRequired[str]
+    # True = Antwort flüstern (via conversation_id-Store aus dem hassmic-Sensor
+    # bzw. explizite tts.speak-Option "whisper").
+    whisper: NotRequired[bool]
 
 
 class WebhookSTTRequestPayload(TypedDict):
